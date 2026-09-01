@@ -143,10 +143,13 @@ Field reference:
 | `run` | `script` only | the command to execute (§2.2) |
 | `hint` | `wait` only | one line shown to the human |
 
-Templates: the body and string fields may use `{{inputs.<name>}}`,
-`{{run.id}}`, `{{run.started}}` (ISO timestamp captured at run start),
-`{{run.seed}}` (integer captured at run start), and inside a foreach item,
-`{{item.<field>}}`. Nothing else is templated. Nodes must not derive time or
+Templates: the body and string fields (`context`, `run`, `before`) may use
+`{{inputs.<name>}}`, `{{run.id}}`, `{{run.started}}` (ISO timestamp captured
+at run start), `{{run.seed}}` (integer captured at run start),
+`{{workflow.dir}}` and `{{workflow.scripts}}` (absolute paths of the node's
+workflow folder and its `scripts/`), and inside a foreach item,
+`{{item.<field>}}`. Nothing else is templated; context files are copied
+verbatim. Nodes must not derive time or
 randomness themselves; they take it from `run.*` so replays are reproducible.
 
 ---
@@ -171,13 +174,17 @@ large media, §4.2).
 Runs `run:` as a shell command in the version directory with environment:
 
 ```
-FLOWY_IN, FLOWY_OUT, FLOWY_NODE, FLOWY_RUN, FLOWY_WORKFLOW,
+FLOWY_IN, FLOWY_OUT, FLOWY_NODE, FLOWY_RUN, FLOWY_WORKFLOW, FLOWY_SCRIPTS,
+FLOWY_FOREACH and FLOWY_ITEM (inside an item),
 FLOWY_INPUT_<NAME> (one per declared input, uppercased)
 ```
 
 Completes on exit 0 with outputs present. Stdout/stderr are captured to the
-version dir. `run:` is executed by the platform shell (`pwsh`/`bash`); keep
-commands portable or provide both via `run: { windows: ..., posix: ... }`.
+version dir. `run:` is executed by the platform shell — PowerShell 7 (`pwsh`)
+if installed, else `cmd.exe`, on Windows; `bash -lc` elsewhere; override
+with `FLOWY_SHELL`. Because the working directory is the version directory,
+refer to your own scripts as `"{{workflow.scripts}}/name.py"`. Keep commands
+portable or provide both via `run: { windows: ..., posix: ... }`.
 
 A script node may also write `out/_meta.json` with free-form structured
 metadata (e.g. durations, checksums). The runner copies it into `result.json`
@@ -297,7 +304,9 @@ structured outputs by path: `foreach: plan.shorts` means
 copies. Files larger than `link_threshold` (default 64 MB) that cannot be
 linked are **not copied**; they are listed in `in/_refs.json` with absolute
 paths, and the engine is granted read access to their containing folders
-(Claude: `--add-dir`). A 2 GB recording never moves.
+(Claude: `--add-dir`). A 2 GB recording never moves. Files above the
+threshold enter the cache signature by size and modification time rather
+than content hash.
 
 ### 4.3 Isolation
 
@@ -319,6 +328,9 @@ their allowed tools. That is the whole point.
 ```
 
 - Width is decided at run time from the array. Each element becomes an item.
+  Item ids come from `key` (slugified) or the 1-based index. A nested
+  workflow declares only `flowy`, `name`, `description`, `nodes`; it cannot
+  contain a `foreach` of its own in this version.
 - Each item runs the nested workflow with `inputs` = parent inputs plus
   `item` = the element. Nested nodes reference it as `{{item.slug}}` and read
   it in `in/_inputs.json`.
@@ -461,9 +473,19 @@ claude -p "<prompt>" \
   --permission-mode dontAsk \
   --allowedTools <tools> \
   --strict-mcp-config \
-  [--json-schema <schema>] [--resume <session>] [--add-dir <dir>]... \
+  [--json-schema <inline JSON>] [--resume <session>] [--add-dir <dir>]... \
   [--model <m>] [--effort <e>]
 ```
+
+The prompt is passed on stdin (command-line length limits). On Windows the
+adapter runs the package's `cli.js` with the current Node binary rather than
+the `.cmd` shim, so JSON arguments survive without shell quoting; if that
+file is not found it falls back to the shim through the shell and asks for
+the structured output in the prompt instead of `--json-schema`.
+`engine.claude` accepts `bin`, `model`, `effort`, `permission_mode`,
+`partial` (stream partial messages into the trace) and `extra_args`.
+`engine.env_unset` (list) removes variables from the child environment —
+the only environment manipulation Flowy performs, and it never adds any.
 
 Non-negotiable rules (see `DECISIONS.md` D1):
 
@@ -472,7 +494,14 @@ Non-negotiable rules (see `DECISIONS.md` D1):
 2. Never read, copy, log, or transmit credentials: not
    `~/.claude/.credentials.json`, not the OS keychain, not
    `CLAUDE_CODE_OAUTH_TOKEN`, not `ANTHROPIC_API_KEY`. Environment is passed
-   through untouched; Flowy neither injects nor strips auth.
+   through; Flowy neither injects nor strips auth. The one exception is
+   session identity: when Flowy itself runs inside a Claude Code session
+   (an agent driving `flowy run`), the CLI refuses to nest, so the adapter
+   removes the session-marker variables (`CLAUDECODE`,
+   `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_CHILD_SESSION`,
+   `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_MESSAGING_*`, `CLAUDE_PID`) from
+   the child environment. `engine.claude.inherit_session: true` disables
+   that.
 3. `--permission-mode` is always set explicitly. The default is *Manual* even
    for `-p`, which would hang a headless node.
 4. `--bare` is **not** used: bare mode ignores subscription auth and requires
@@ -556,7 +585,9 @@ Because it is JSON Canvas, Obsidian opens the layout read-only for free.
 
 ## 11. Compilation
 
-`flowy compile` reads the workflow folder and writes `manifest.json`:
+`flowy compile` reads the workflow folder and writes the manifest (to
+`.flowy/manifest.json` when run standalone, and to `runs/<run-id>/manifest.json`
+at the start of each run):
 
 - resolves every node file, validates frontmatter against this spec,
 - resolves `needs` into edges, rejects cycles, unknown ids, and edges into
@@ -580,23 +611,26 @@ files while a run is in flight affects the next run, not this one
 
 ```
 flowy compile [dir]                       validate + write manifest, no run
-flowy run [dir] [--input k=v]... [--until <node>] [--run <id>] [--dry]
-flowy status [--run <id>]                 nodes, items, gates, costs
+flowy run [dir] [--input k=v]... [--until <node>] [--run <id>] [--recompile] [--dry]
+flowy runs [dir]                          list runs, newest first
+flowy status [dir] [--run <id>]           nodes, items, gates, costs
 flowy approve <node> [--item <fe>/<id>] --set k=v ...
 flowy rerun <node> [--item ...] [--feedback "..."]
 flowy use <node> <version>
 flowy chat <node> [--item ...]
-flowy done <node> [--item ...]            mark a chat node complete
-flowy skip <foreach>/<item-id>
-flowy stop
-flowy trace <node> [--version vN]
+flowy done <node> [--item ...]            mark a wait/chat node complete
+flowy skip <foreach>/<item-id> [--undo]
+flowy stop [dir]
+flowy trace <node> [--version vN] [--raw]
 flowy layout [dir]                        (re)generate layout.canvas
 flowy serve [dir] [--port 3579]           local viewer
 ```
 
 `<node>` addresses top-level nodes; `--item short/my-first-short` addresses a
-node inside an item. All commands operate on the most recent run unless
-`--run` is given.
+node inside an item. Node commands take `--dir <workflow>` (default `.`).
+All commands operate on the most recent run unless `--run` is given.
+`flowy run --run <id>` resumes; add `--recompile` to pull edited workflow
+files into that run.
 
 ---
 

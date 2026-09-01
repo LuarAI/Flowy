@@ -3,9 +3,34 @@
 **Local, file-based workflows for your own agent CLI — with human gates,
 parallel fan-out, versions, and a canvas that shows what's actually happening.**
 
-> Status: **v0 — specification stage.** The format and runtime contract are
-> written (`SPEC.md`); the runner and viewer are not built yet. See
-> `docs/roadmap.md`.
+> Status: **v0.1 — runner, CLI and viewer work.** Claude Code is the
+> first engine (Codex and Gemini adapters are best-effort and untested).
+> See `docs/roadmap.md` for what is and isn't there yet.
+
+## Install
+
+Requires Node 20+ and an agent CLI you are logged into (`claude`).
+
+```sh
+git clone https://github.com/LuarAI/Flowy.git
+cd Flowy
+npm install && npm run build
+npm link            # puts `flowy` on your PATH (or use `node dist/cli.js`)
+```
+
+## Try it
+
+```sh
+flowy run examples/hello-world            # 1 Claude call: three story ideas, then a gate
+flowy status examples/hello-world
+flowy serve examples/hello-world          # open http://127.0.0.1:3579 — approve, rerun, compare there
+```
+
+Or from the terminal: `flowy approve ideas -d examples/hello-world --set notes="shorter"`,
+then `flowy run examples/hello-world --run <id>` to continue.
+
+Your agent can write workflows for you: point it at `AGENTS.md` and your
+existing process notes.
 
 ## The idea
 

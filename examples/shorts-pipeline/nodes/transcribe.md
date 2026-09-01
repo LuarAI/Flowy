@@ -2,7 +2,7 @@
 id: transcribe
 title: Transcribe session
 mode: script
-run: python scripts/transcribe.py "{{inputs.session_dir}}"
+run: python "{{workflow.scripts}}/transcribe.py" "{{inputs.session_dir}}"
 outputs: [words.json, full.txt, media.json]
 lock: gpu
 timeout: 60m

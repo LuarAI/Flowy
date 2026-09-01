@@ -1,0 +1,25 @@
+flowy: 0
+name: hello-world
+description: The smallest real workflow - three story ideas, a gate, one tiny story per idea, an anthology. Runs on your own Claude Code login.
+
+inputs:
+  topic:
+    type: string
+    default: a lighthouse keeper who collects lost radio signals
+    description: What the stories are about
+
+engine:
+  default: claude
+  claude:
+    permission_mode: dontAsk
+
+concurrency: 2
+
+nodes:
+  - ideas
+  - foreach: ideas.ideas
+    id: story
+    workflow: ./story
+    key: slug
+    concurrency: 2
+  - anthology

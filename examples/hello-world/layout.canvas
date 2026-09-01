@@ -1,0 +1,43 @@
+{
+  "nodes": [
+    {
+      "id": "ideas",
+      "type": "text",
+      "text": "ideas\nagent · gate",
+      "x": 0,
+      "y": 0,
+      "width": 220,
+      "height": 72
+    },
+    {
+      "id": "story",
+      "type": "text",
+      "text": "story\nforeach ideas.ideas: draft",
+      "x": 0,
+      "y": 162,
+      "width": 340,
+      "height": 96
+    },
+    {
+      "id": "anthology",
+      "type": "text",
+      "text": "anthology\nagent",
+      "x": 0,
+      "y": 324,
+      "width": 220,
+      "height": 72
+    }
+  ],
+  "edges": [
+    {
+      "id": "story->anthology",
+      "fromNode": "story",
+      "toNode": "anthology"
+    },
+    {
+      "id": "ideas->story",
+      "fromNode": "ideas",
+      "toNode": "story"
+    }
+  ]
+}

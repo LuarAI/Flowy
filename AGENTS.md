@@ -57,7 +57,11 @@ prompt, the workflow is wrong.
    output is validated; a prose list is not.
 7. **Fan out with `foreach`** when one step produces many independent
    things (ideas, posts, clips). Put the per-item steps in a nested workflow
-   folder. Keep per-item `concurrency` small (2–3).
+   folder. Keep per-item `concurrency` small (2–3). Inside the item, read
+   the item's own data from `in/_inputs.json` (`item`) or `{{item.<field>}}`;
+   only add the source node to `needs:` if the item genuinely needs the
+   *whole* list — because then every item is invalidated whenever the list
+   changes (the cache hashes inputs by content).
 8. **Declare locks** for exclusive resources: a GPU, an editor that must be
    closed while a project file is written, a browser profile.
 9. **Reference tools by their scripts.** Flowy ships no domain tools. A

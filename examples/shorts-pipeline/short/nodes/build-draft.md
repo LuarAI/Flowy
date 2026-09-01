@@ -3,11 +3,11 @@ id: build-draft
 title: Build editor draft
 mode: script
 needs: [edit-plan, transcribe, record-vo]
-run: python scripts/build_draft.py "{{item.slug}}" "{{inputs.brand_dir}}"
+run: python "{{workflow.scripts}}/build_draft.py" "{{item.slug}}" "{{inputs.brand_dir}}"
 outputs: [draft.json, edit.otio]
 lock: editor
 before:
-  - python scripts/check_editor_closed.py
+  - python "{{workflow.scripts}}/check_editor_closed.py"
 timeout: 10m
 ---
 

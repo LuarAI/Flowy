@@ -2,7 +2,7 @@
 id: fetch-transcript
 title: Fetch transcript
 mode: script
-run: python scripts/fetch_transcript.py "{{inputs.video}}"
+run: python "{{workflow.scripts}}/fetch_transcript.py" "{{inputs.video}}"
 outputs: [transcript.md, video.json]
 timeout: 20m
 ---

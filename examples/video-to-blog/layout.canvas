@@ -1,13 +1,62 @@
 {
   "nodes": [
-    { "id": "fetch-transcript",  "type": "text", "text": "fetch-transcript\nscript",                 "x": 0,   "y": 0,   "width": 220, "height": 70 },
-    { "id": "extract-teachings", "type": "text", "text": "extract-teachings\nagent · schema · gate", "x": 0,   "y": 140, "width": 220, "height": 70 },
-    { "id": "post",              "type": "text", "text": "post\nforeach teaching → draft (gate) → publish", "x": 0, "y": 280, "width": 220, "height": 90 },
-    { "id": "catalog",           "type": "text", "text": "catalog\nscript",                          "x": 0,   "y": 440, "width": 220, "height": 70 }
+    {
+      "id": "fetch-transcript",
+      "type": "text",
+      "text": "fetch-transcript\nscript",
+      "x": 0,
+      "y": 0,
+      "width": 220,
+      "height": 70
+    },
+    {
+      "id": "extract-teachings",
+      "type": "text",
+      "text": "extract-teachings\nagent · gate",
+      "x": 0,
+      "y": 140,
+      "width": 220,
+      "height": 70
+    },
+    {
+      "id": "post",
+      "type": "text",
+      "text": "post\nforeach extract-teachings.teachings: draft → publish",
+      "x": 0,
+      "y": 280,
+      "width": 220,
+      "height": 90
+    },
+    {
+      "id": "catalog",
+      "type": "text",
+      "text": "catalog\nscript",
+      "x": 0,
+      "y": 440,
+      "width": 220,
+      "height": 70
+    }
   ],
   "edges": [
-    { "id": "e1", "fromNode": "fetch-transcript",  "toNode": "extract-teachings" },
-    { "id": "e2", "fromNode": "extract-teachings", "toNode": "post" },
-    { "id": "e3", "fromNode": "post",              "toNode": "catalog" }
+    {
+      "id": "e1",
+      "fromNode": "fetch-transcript",
+      "toNode": "extract-teachings"
+    },
+    {
+      "id": "e3",
+      "fromNode": "post",
+      "toNode": "catalog"
+    },
+    {
+      "id": "fetch-transcript->post",
+      "fromNode": "fetch-transcript",
+      "toNode": "post"
+    },
+    {
+      "id": "e2",
+      "fromNode": "extract-teachings",
+      "toNode": "post"
+    }
   ]
 }

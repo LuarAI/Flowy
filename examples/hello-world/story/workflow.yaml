@@ -1,0 +1,6 @@
+flowy: 0
+name: story
+description: One idea -> one 120-word story, approved by the human.
+
+nodes:
+  - draft

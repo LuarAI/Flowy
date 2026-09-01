@@ -3,7 +3,7 @@ id: sync-screen
 title: Sync screen recording
 mode: script
 needs: [transcribe]
-run: python scripts/sync_screen.py
+run: python "{{workflow.scripts}}/sync_screen.py"
 outputs: [offsets.json]
 timeout: 15m
 ---

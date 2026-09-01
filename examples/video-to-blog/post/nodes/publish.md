@@ -3,7 +3,7 @@ id: publish
 title: Publish
 mode: script
 needs: [draft]
-run: python scripts/publish_post.py "{{inputs.blog_dir}}" "{{item.slug}}"
+run: python "{{workflow.scripts}}/publish_post.py" "{{inputs.blog_dir}}" "{{item.slug}}"
 outputs: [published.json]
 timeout: 2m
 ---

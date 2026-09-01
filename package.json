@@ -1,0 +1,48 @@
+{
+  "name": "flowy",
+  "version": "0.1.0",
+  "description": "Local, file-based workflows for your own agent CLI — with human gates, fan-out, versions, and a canvas.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "flowy": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "SPEC.md",
+    "AGENTS.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && vite build",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p viewer/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "chokidar": "^4.0.3",
+    "commander": "^13.1.0",
+    "fast-glob": "^3.3.3",
+    "ws": "^8.18.1",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@types/ws": "^8.5.14",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@xyflow/react": "^12.4.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.5"
+  }
+}

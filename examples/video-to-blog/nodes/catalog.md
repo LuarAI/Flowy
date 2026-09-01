@@ -3,7 +3,7 @@ id: catalog
 title: Rebuild catalog
 mode: script
 needs: [post]
-run: python scripts/update_catalog.py "{{inputs.blog_dir}}"
+run: python "{{workflow.scripts}}/update_catalog.py" "{{inputs.blog_dir}}"
 outputs: [catalog.json]
 timeout: 5m
 ---

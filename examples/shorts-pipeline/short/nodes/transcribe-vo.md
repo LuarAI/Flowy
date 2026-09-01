@@ -3,7 +3,7 @@ id: transcribe-vo
 title: Transcribe voice-over
 mode: script
 needs: [record-vo]
-run: python scripts/transcribe.py "in/record-vo/vo.m4a"
+run: python "{{workflow.scripts}}/transcribe.py" "in/record-vo/vo.m4a"
 outputs: [words.json, full.txt, media.json]
 lock: gpu
 timeout: 15m
