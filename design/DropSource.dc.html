@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&family=Patrick+Hand&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Patrick Hand', 'Comic Sans MS', cursive; color: #2b2925; }
+    a { color: #c2410c; } a:hover { color: #9a3412; }
+    .hand { font-family: 'Gloria Hallelujah', 'Comic Sans MS', cursive; }
+    .card { background: #fffdf9; border: 2px solid #2b2925; border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px; }
+    .muted { color: #8a857c; }
+    .accent { color: #c2410c; }
+  </style>
+</helmet>
+<div style="position: relative; width: 1000px; height: 700px; overflow: hidden; background-color: #f6f4ee; background-image: radial-gradient(circle, #ddd9d0 1.2px, transparent 1.2px); background-size: 26px 26px;">
+
+  <div class="hand" style="position: absolute; left: 0; top: 44px; width: 1000px; text-align: center; font-size: 26px;">drop a file or folder anywhere</div>
+  <div class="muted" style="position: absolute; left: 0; top: 88px; width: 1000px; text-align: center; font-size: 17px;">it lands as a source card, right where you dropped it</div>
+
+  <!-- ghost being dragged -->
+  <div class="card" style="position: absolute; left: 120px; top: 250px; width: 300px; padding: 22px 26px; border-style: dashed; background: rgba(255, 253, 249, 0.6); transform: rotate(-1.4deg);">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <svg width="34" height="29" viewBox="0 0 19 16" fill="none"><path d="M1.5 4 C1.5 3, 2 2, 3 2 L7 2 L9 4.5 L16 4.5 C17 4.5, 17.5 5, 17.5 6 L17.5 12.5 C17.5 13.5, 17 14, 16 14 L3 14 C2 14, 1.5 13.5, 1.5 12.5 Z" stroke="#8a857c" stroke-width="1.4" stroke-linejoin="round"></path></svg>
+      <div>
+        <div class="muted" style="font-size: 19px;">Session_0902/</div>
+        <div class="muted" style="font-size: 14px;">3 clips · 2.1 GB</div>
+      </div>
+    </div>
+  </div>
+  <svg width="22" height="24" viewBox="0 0 16 18" fill="none" style="position: absolute; left: 396px; top: 356px;"><path d="M2 1 L14 10 L8.5 11 L11 16.5 L8.5 17.5 L6 12 L2.5 15 Z" stroke="#2b2925" stroke-width="1.6" stroke-linejoin="round" fill="#fffdf9"></path></svg>
+
+  <!-- becomes -->
+  <svg width="1000" height="700" viewBox="0 0 1000 700" fill="none" style="position: absolute; left: 0; top: 0; pointer-events: none;">
+    <defs>
+      <marker id="ah2" markerWidth="10" markerHeight="10" refX="7" refY="4" orient="auto">
+        <path d="M1 1 L7 4 L1 7" stroke="#2b2925" stroke-width="1.6" fill="none" stroke-linecap="round"></path>
+      </marker>
+    </defs>
+    <path d="M480 314 C 500 308, 512 308, 538 310" stroke="#2b2925" stroke-width="1.8" stroke-dasharray="7 6" marker-end="url(#ah2)"></path>
+    <path d="M810 332 C 818 334, 820 336, 828 340" stroke="#2b2925" stroke-width="1.8" marker-end="url(#ah2)"></path>
+  </svg>
+
+  <!-- the landed source -->
+  <div class="card" style="position: absolute; left: 548px; top: 274px; width: 218px; padding: 14px 18px; transform: rotate(0.6deg);">
+    <div style="display: flex; align-items: center; gap: 9px;">
+      <svg width="20" height="17" viewBox="0 0 19 16" fill="none"><path d="M1.5 4 C1.5 3, 2 2, 3 2 L7 2 L9 4.5 L16 4.5 C17 4.5, 17.5 5, 17.5 6 L17.5 12.5 C17.5 13.5, 17 14, 16 14 L3 14 C2 14, 1.5 13.5, 1.5 12.5 Z" stroke="#2b2925" stroke-width="1.6" stroke-linejoin="round"></path></svg>
+      <div style="font-size: 18px;">Session_0902/</div>
+    </div>
+    <div class="muted" style="font-size: 13px; margin-top: 2px;">source · stays on your disk</div>
+  </div>
+
+  <!-- an existing step it can feed -->
+  <div class="card" style="position: absolute; left: 832px; top: 300px; width: 146px; padding: 12px 16px; opacity: 0.5; transform: rotate(-0.5deg);">
+    <div class="hand" style="font-size: 17px;">Transcribe</div>
+    <div class="muted" style="font-size: 12px;">step</div>
+  </div>
+
+  <div class="muted" style="position: absolute; left: 0; bottom: 40px; width: 1000px; text-align: center; font-size: 16px;">big folders are never copied — the card just points at them · connect it by drawing a line, like any arrow</div>
+</div>
+</x-dc>
+</body>
+</html>

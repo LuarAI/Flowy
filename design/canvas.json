@@ -1,0 +1,32 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "The canvas" },
+    { "file": "DropSource.dc.html", "x": 0, "y": 1060, "w": 1000, "h": 700, "title": "Moment: drop a source" },
+    { "file": "Approve.dc.html", "x": 1090, "y": 1060, "w": 1000, "h": 700, "title": "Moment: your call" },
+    { "file": "OpenResult.dc.html", "x": 2180, "y": 1060, "w": 1000, "h": 700, "title": "Moment: open a result" }
+  ],
+  "annotations": [
+    {
+      "id": "principles",
+      "x": 1530,
+      "y": 20,
+      "w": 300,
+      "text": "The whole idea:\nif you can use Excalidraw, you can use Flowy.\n\n- one canvas, cards and arrows\n- 5 tools, nothing else in the chrome\n- cards open IN PLACE - no side panel, no tabs\n- one accent color means exactly one thing: your turn\n- jargon becomes verbs: foreach -> checklist, gate -> your call, stale -> needs a refresh"
+    },
+    {
+      "id": "what-went-away",
+      "x": 1530,
+      "y": 420,
+      "w": 300,
+      "text": "Removed vs. today's UI:\ntoolbar buttons, run selector, 6 tabs, log drawer, edit-graph mode.\n\nWhere it went: run lives top-right, versions live under a corner flip on each card, the log only appears when something fails, connecting is just drawing an arrow."
+    },
+    {
+      "id": "tradeoff",
+      "x": 1530,
+      "y": 780,
+      "w": 300,
+      "text": "Tradeoff to accept:\npower features (traces, versions, cost detail) move one click deeper - a small 'i' on each card. The canvas stays calm; the depth is still there for debugging."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

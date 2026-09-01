@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&family=Patrick+Hand&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Patrick Hand', 'Comic Sans MS', cursive; color: #2b2925; }
+    a { color: #c2410c; } a:hover { color: #9a3412; }
+    .hand { font-family: 'Gloria Hallelujah', 'Comic Sans MS', cursive; }
+    .card { background: #fffdf9; border: 2px solid #2b2925; border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px; }
+    .muted { color: #8a857c; }
+    .accent { color: #c2410c; }
+    .chip { display: inline-flex; align-items: center; gap: 5px; border: 1.5px solid #2b2925; border-radius: 8px 3px 9px 4px / 4px 9px 3px 8px; padding: 2px 9px; font-size: 13px; background: #fffdf9; }
+    .line { height: 3px; background: #cfcabf; border-radius: 3px; }
+  </style>
+</helmet>
+<div style="position: relative; width: 1000px; height: 700px; overflow: hidden; background-color: #f6f4ee; background-image: radial-gradient(circle, #ddd9d0 1.2px, transparent 1.2px); background-size: 26px 26px;">
+
+  <!-- the finished step -->
+  <div class="card" style="position: absolute; left: 90px; top: 226px; width: 264px; padding: 16px 20px; transform: rotate(-0.5deg);">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <div class="hand" style="font-size: 20px;">Write entry</div>
+      <svg width="20" height="18" viewBox="0 0 20 18" fill="none"><path d="M2.5 10 C 5 12, 6.5 14, 7.5 15.5 C 10 10, 13.5 5, 18 2" stroke="#2b2925" stroke-width="2.2" stroke-linecap="round"></path></svg>
+    </div>
+    <div class="muted" style="font-size: 13px; margin: 1px 0 10px;">Claude did it · 47 s</div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <div class="chip" style="border-width: 2px; position: relative;">
+        <svg width="11" height="13" viewBox="0 0 11 13" fill="none"><path d="M1.5 1.5 L7 1.5 L9.5 4 L9.5 11.5 L1.5 11.5 Z M7 1.5 L7 4 L9.5 4" stroke="#2b2925" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+        entry.md
+      </div>
+      <div class="chip muted" style="border-color: #8a857c;">
+        <svg width="11" height="13" viewBox="0 0 11 13" fill="none"><path d="M1.5 1.5 L7 1.5 L9.5 4 L9.5 11.5 L1.5 11.5 Z M7 1.5 L7 4 L9.5 4" stroke="#8a857c" stroke-width="1.2" stroke-linejoin="round"></path></svg>
+        outline.md
+      </div>
+    </div>
+  </div>
+  <svg width="22" height="24" viewBox="0 0 16 18" fill="none" style="position: absolute; left: 218px; top: 330px;"><path d="M2 1 L14 10 L8.5 11 L11 16.5 L8.5 17.5 L6 12 L2.5 15 Z" stroke="#2b2925" stroke-width="1.6" stroke-linejoin="round" fill="#fffdf9"></path></svg>
+
+  <!-- click -> the paper opens -->
+  <svg width="1000" height="700" viewBox="0 0 1000 700" fill="none" style="position: absolute; left: 0; top: 0; pointer-events: none;">
+    <defs>
+      <marker id="ah3" markerWidth="10" markerHeight="10" refX="7" refY="4" orient="auto">
+        <path d="M1 1 L7 4 L1 7" stroke="#2b2925" stroke-width="1.6" fill="none" stroke-linecap="round"></path>
+      </marker>
+    </defs>
+    <path d="M402 314 C 436 296, 440 258, 468 220" stroke="#2b2925" stroke-width="1.8" stroke-dasharray="7 6" marker-end="url(#ah3)"></path>
+  </svg>
+
+  <div class="card" style="position: absolute; left: 480px; top: 80px; width: 380px; height: 500px; padding: 26px 30px; transform: rotate(1deg); box-shadow: 8px 10px 0 rgba(43, 41, 37, 0.08);">
+    <div style="display: flex; align-items: flex-start; justify-content: space-between;">
+      <div class="hand" style="font-size: 22px; line-height: 1.25;">Start the Second Project</div>
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style="flex: none; margin-top: 5px;"><path d="M2.5 2.5 C 6 6, 9 9, 12.5 12.5 M12.5 2.5 C 9 6, 6 9, 2.5 12.5" stroke="#8a857c" stroke-width="1.7" stroke-linecap="round"></path></svg>
+    </div>
+    <div class="muted" style="font-size: 13px; margin: 4px 0 18px;">entry.md · 612 words</div>
+    <div style="display: flex; flex-direction: column; gap: 11px;">
+      <div class="line" style="width: 92%;"></div>
+      <div class="line" style="width: 100%;"></div>
+      <div class="line" style="width: 84%;"></div>
+      <div class="line" style="width: 97%; background: #b8b2a6;"></div>
+      <div class="line" style="width: 70%;"></div>
+      <div style="height: 8px;"></div>
+      <div class="line" style="width: 96%;"></div>
+      <div class="line" style="width: 88%;"></div>
+      <div class="line" style="width: 99%;"></div>
+      <div class="line" style="width: 60%;"></div>
+      <div style="height: 8px;"></div>
+      <div class="line" style="width: 90%;"></div>
+      <div class="line" style="width: 95%;"></div>
+      <div class="line" style="width: 45%;"></div>
+    </div>
+    <div style="position: absolute; left: 30px; bottom: 22px; display: flex; gap: 18px; align-items: center;">
+      <div style="font-size: 16px; border-bottom: 1.5px solid #2b2925; cursor: pointer;">open in your editor</div>
+      <div class="muted" style="font-size: 14px; cursor: pointer;">show in folder</div>
+    </div>
+  </div>
+
+  <div class="muted" style="position: absolute; left: 0; bottom: 40px; width: 1000px; text-align: center; font-size: 16px;">a result is a real file on your disk — click to peek, open it in any app, drag it wherever it goes next</div>
+</div>
+</x-dc>
+</body>
+</html>
