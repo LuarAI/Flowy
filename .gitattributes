@@ -1,0 +1,7 @@
+# Normalize line endings so Windows and macOS clones never show phantom diffs.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.mp4 binary
+*.m4a binary
+*.wav binary
