@@ -145,8 +145,8 @@ export function Canvas({ state, selected, selectedItem, onSelect, onSelectItem, 
     const ns: FlowyNode[] = m.top.map((id, i) => {
       const p = pos.get(id);
       const isFe = id in m.foreach;
-      const view = viewById.get(id) ?? placeholderView(m, id);
-      const fe = feById.get(id) ?? placeholderForeach(m, id);
+      const view = isFe ? undefined : (viewById.get(id) ?? placeholderView(m, id));
+      const fe = isFe ? (feById.get(id) ?? placeholderForeach(m, id)) : undefined;
       return {
         id,
         type: "flowy",
