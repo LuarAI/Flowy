@@ -29,6 +29,15 @@ export function engineConfig(store: RunStore, name: string): Record<string, unkn
   return c && typeof c === "object" ? (c as Record<string, unknown>) : {};
 }
 
+/** Workflow-level engine config with the node's own model/effort overrides applied. */
+export function engineConfigFor(store: RunStore, spec: NodeSpec): Record<string, unknown> {
+  const base = engineConfig(store, engineName(store, spec));
+  const out = { ...base };
+  if (spec.model) out.model = spec.model;
+  if (spec.effort) out.effort = spec.effort;
+  return out;
+}
+
 /**
  * Compute what the node's signature would be right now (SPEC §6.3).
  * Returns null when an upstream has no current version yet.
@@ -48,7 +57,7 @@ export async function computeSignature(store: RunStore, addr: NodeAddr): Promise
   const { body: _b, file: _f, ...fm } = spec;
   const nodeHash = sha256(JSON.stringify(fm) + "\n" + resolveBody(spec, tctx));
   const en = engineName(store, spec);
-  const cfg = engineConfig(store, en);
+  const cfg = engineConfigFor(store, spec);
   const engineHash = sha256(JSON.stringify({ en, model: cfg.model ?? null, effort: cfg.effort ?? null }));
   const scripts: Record<string, string> = {};
   if (spec.mode === "script" && spec.run) {

@@ -48,6 +48,8 @@ const NODE_KEYS = new Set([
   "cache",
   "before",
   "engine",
+  "model",
+  "effort",
   "run",
   "hint",
 ]);
@@ -415,6 +417,9 @@ async function loadNode(
   const cache = d.cache === undefined || d.cache === null ? "inputs" : String(d.cache);
   if (cache !== "inputs" && cache !== "never") push("cache", 'cache must be "inputs" or "never"');
   const engine = d.engine === undefined || d.engine === null ? null : String(d.engine);
+  const model = d.model === undefined || d.model === null ? null : String(d.model);
+  const effort = d.effort === undefined || d.effort === null ? null : String(d.effort);
+  if ((model || effort) && mode !== "agent" && mode !== "chat") push(model ? "model" : "effort", "model/effort apply only to agent and chat nodes");
 
   let run: NodeSpec["run"] = null;
   if (mode === "script") {
@@ -453,6 +458,8 @@ async function loadNode(
     cache: cache as "inputs" | "never",
     before,
     engine,
+    model,
+    effort,
     run,
     hint,
     body: fm.body,

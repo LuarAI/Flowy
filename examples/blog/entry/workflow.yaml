@@ -1,0 +1,7 @@
+flowy: 0
+name: entry
+description: One angle -> structure refined in a chat, then a drafted, approved entry.
+
+nodes:
+  - outline
+  - write

@@ -1,0 +1,25 @@
+flowy: 0
+name: blog
+description: Text-only - raw notes about a topic become blog entries. Angles are curated at a gate; each entry's structure is refined in a chat, then drafted and approved.
+
+inputs:
+  topic:
+    type: string
+    default: what building side projects teaches about learning
+    description: What the entries are about (the notes file carries the substance)
+
+engine:
+  default: claude
+  claude:
+    permission_mode: dontAsk
+
+concurrency: 2
+
+nodes:
+  - angles
+  - foreach: angles.angles
+    id: entry
+    workflow: ./entry
+    key: slug
+    concurrency: 2
+  - index

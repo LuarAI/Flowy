@@ -1,0 +1,43 @@
+{
+  "nodes": [
+    {
+      "id": "angles",
+      "type": "text",
+      "text": "angles\nagent · gate",
+      "x": 0,
+      "y": 0,
+      "width": 220,
+      "height": 72
+    },
+    {
+      "id": "entry",
+      "type": "text",
+      "text": "entry\nforeach angles.angles: outline → write",
+      "x": 0,
+      "y": 162,
+      "width": 340,
+      "height": 96
+    },
+    {
+      "id": "index",
+      "type": "text",
+      "text": "index\nagent",
+      "x": 0,
+      "y": 324,
+      "width": 220,
+      "height": 72
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry->index",
+      "fromNode": "entry",
+      "toNode": "index"
+    },
+    {
+      "id": "angles->entry",
+      "fromNode": "angles",
+      "toNode": "entry"
+    }
+  ]
+}

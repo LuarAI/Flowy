@@ -140,6 +140,8 @@ Field reference:
 | `cache` | no | default `inputs` |
 | `before` | no | list of commands run before the node; non-zero exit → `blocked` |
 | `engine` | no | `claude`, `codex`, `gemini`, … |
+| `model` | no | engine model override for this node (e.g. `haiku`, `opus`); agent/chat only |
+| `effort` | no | engine effort override for this node; agent/chat only |
 | `run` | `script` only | the command to execute (§2.2) |
 | `hint` | `wait` only | one line shown to the human |
 

@@ -55,6 +55,30 @@ rules, large-file signatures).
   file across workflows by reference); editing structural frontmatter
   (mode, outputs, approve) from the viewer.
 
+## Viewer backlog (agreed 2026-09, not yet built)
+
+The format stays as is; these are view-layer changes:
+
+1. **Tokens first, dollars second.** On subscription plans the cost figure
+   is an API-equivalent estimate, not money spent; show tokens prominently
+   and the estimate as "≈$ API-equiv" (workflow setting `billing:`).
+2. **Context pills on the canvas** — render each `context:` entry and run
+   input as a small source node with edges into the steps that read it;
+   click for size/mtime/who-uses-it; delete edge = remove entry.
+3. **Output chips on cards** and a Results tray collecting the outputs of
+   terminal nodes.
+4. **Simplified `+ step` dialog**: name + "what happens here" + three
+   choices (Claude does it / we do it together / I do it myself); `script`
+   under an advanced toggle. Model dropdown.
+5. **Drag & drop a file** onto the canvas/node → copy into `context/` and
+   add the entry. Browsers do not expose absolute paths, so **folders** get
+   a Browse… button instead: the local server opens the native OS folder
+   picker and returns the real path.
+6. **Chat/trace collapse** — long transcripts and traces collapsed by
+   default with a summary line.
+7. **Checklist language** — present a foreach as a checklist; "+ add item"
+   writes an item by hand into the same pipeline.
+
 ## Known gaps and next steps
 
 1. Run `examples/video-to-blog` end to end with real scripts (needs the

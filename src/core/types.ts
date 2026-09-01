@@ -40,6 +40,8 @@ export interface NodeSpec {
   cache: "inputs" | "never";
   before: string[];
   engine: string | null;
+  model: string | null;
+  effort: string | null;
   run: string | RunCommand | null;
   hint: string | null;
   /** The markdown body: the prompt (agent/chat) or a description (script/wait). */

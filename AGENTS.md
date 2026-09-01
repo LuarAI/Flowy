@@ -69,6 +69,10 @@ prompt, the workflow is wrong.
    script must read (`FLOWY_IN`) and write (`FLOWY_OUT`) in `scripts/README.md`.
 10. **Never derive time or randomness inside a node.** Use `{{run.started}}`
     and `{{run.seed}}`.
+11. **Match the model to the step.** `model:`/`effort:` on a node override
+    the workflow default: heavy writing on high effort, mechanical assembly
+    on a small model (`model: haiku`). Changing them re-runs the node (they
+    are part of the cache signature).
 11. **Run `flowy compile` before declaring the workflow done.** It reports
     unknown ids, cycles, missing outputs, bad locks, and gate nodes without
     `approve` fields, with file and line.

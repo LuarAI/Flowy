@@ -12,7 +12,7 @@ import { ensureDir, hashFile, listFiles, nowIso, readJson, readJsonOrNull, write
 import { collectInputSources, materialize, readItem } from "./materialize.js";
 import type { RunStore } from "./runstore.js";
 import { finalizeSignature } from "./signature.js";
-import { computeSignature, engineConfig, engineName, missingOutputs, resolveBody, templateContext } from "./status.js";
+import { computeSignature, engineConfigFor, engineName, missingOutputs, resolveBody, templateContext } from "./status.js";
 import { resolveTemplate } from "./template.js";
 import type { NodeAddr, NodeResult, NodeSpec, OutputInfo, ResultStatus, TraceEvent } from "./types.js";
 
@@ -202,7 +202,7 @@ export async function executeNode(ctx: ExecContext, addr: NodeAddr, opts: ExecOp
       timeoutMs: spec.timeoutMs,
       resumeSession: resume,
       addDirs: mat.addDirs,
-      config: engineConfig(store, en),
+      config: engineConfigFor(store, spec),
       env,
       signal: ctx.signal,
       onEvent: (e: TraceEvent) => trace.write(e),

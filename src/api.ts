@@ -205,13 +205,13 @@ export async function chat(store: RunStore, addr: NodeAddr, engines = new Engine
   if (!(await exists(promptFile))) throw new Error(`no prompt.md in ${vdir}`);
   const refs = await fs.readFile(path.join(vdir, "in", "_refs.json"), "utf8").catch(() => "[]");
   const addDirs = [...new Set((JSON.parse(refs) as Array<{ path: string }>).map((r) => path.dirname(r.path)))];
-  const cfg = store.manifest.engine[engine.name];
+  const { engineConfigFor } = await import("./core/status.js");
   const code = await engine.interactive({
     cwd: vdir,
     promptFile,
     resumeSession: result?.session_id ?? null,
     addDirs,
-    config: cfg && typeof cfg === "object" ? (cfg as Record<string, unknown>) : {},
+    config: engineConfigFor(store, spec),
     env,
   });
   await settleWaiting({ store, engines, signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr);
