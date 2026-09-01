@@ -517,8 +517,13 @@ Capabilities: `structured_output`, `resume`, `thinking`, `subagent_trace`,
 
 ### 8.2 Others
 
-- **Codex CLI**: `codex exec --json ... --output-last-message out/_last.md`.
-  Capabilities: `resume`, `cost` (token counts).
+- **Codex CLI** (verified with codex-cli 0.148): `codex exec --json
+  --skip-git-repo-check -C <cwd> --output-last-message out/_last.md
+  --sandbox workspace-write [--output-schema schema.json] [--add-dir …] -`
+  with the prompt on stdin. Structured output uses `--output-schema`; the
+  final message is parsed as JSON. Capabilities: `structured_output`,
+  `resume`, `cost` (token counts only — no dollar estimate). Config:
+  `bin`, `model`, `sandbox`, `extra_args`.
 - **Gemini CLI**: `gemini -p --output-format stream-json`. Capabilities: `cost`.
 - **Generic**: `engine.custom.command` with `{prompt}`/`{cwd}` placeholders;
   no capabilities; result is exit code + outputs.

@@ -1,18 +1,20 @@
+import { promises as fs } from "node:fs";
 import path from "node:path";
-import { nowIso } from "../core/fsutil.js";
+import { nowIso, readJsonOrNull, writeJson } from "../core/fsutil.js";
 import type { TraceEvent } from "../core/types.js";
 import { findOnPath, spawnProcess } from "./proc.js";
 import { emptyResult, type Engine, type EngineJob, type EngineResult, type InteractiveJob } from "./types.js";
 
 /**
- * OpenAI Codex CLI adapter: `codex exec --json`. Best effort — the event
- * schema is not a stable contract (docs/research.md §3), so everything is
- * passed through as trace payloads and only the exit code and last message
- * are relied upon.
+ * OpenAI Codex CLI adapter: `codex exec --json`. Verified against codex-cli
+ * 0.148 (Sept 2026). The JSONL event schema is not a stable contract, so
+ * every event is kept as a raw trace payload and only a few fields are
+ * relied upon: `thread.started.thread_id`, `turn.completed.usage`, and the
+ * `item.*` kinds for trace typing.
  */
 export class CodexEngine implements Engine {
   name = "codex";
-  capabilities = ["resume", "cost"] as Engine["capabilities"];
+  capabilities: Engine["capabilities"] = ["structured_output", "resume", "cost"];
 
   private async bin(config: Record<string, unknown>, env: NodeJS.ProcessEnv) {
     const b = typeof config.bin === "string" ? config.bin : await findOnPath("codex", env);
@@ -23,26 +25,29 @@ export class CodexEngine implements Engine {
   async run(job: EngineJob): Promise<EngineResult> {
     const { cmd, shell } = await this.bin(job.config, job.env);
     const cfg = job.config;
-    const args = ["exec", "--json", "--skip-git-repo-check", "-C", job.cwd, "--output-last-message", path.join(job.cwd, "out", "_last.md")];
-    if (typeof cfg.sandbox === "string") args.push("--sandbox", cfg.sandbox);
-    else args.push("--sandbox", "workspace-write");
-    if (typeof cfg.model === "string" && cfg.model) args.push("--model", cfg.model);
+    const lastFile = path.join(job.cwd, "out", "_last.md");
+    const args = ["exec"];
     if (job.resumeSession) args.push("resume", job.resumeSession);
-    if (Array.isArray(cfg.extra_args)) args.push(...cfg.extra_args.map(String));
-    // Prompt via stdin. `-` tells codex to read the prompt from stdin.
-    args.push("-");
-
-    let prompt = job.prompt;
+    args.push("--json", "--skip-git-repo-check", "-C", job.cwd, "--output-last-message", lastFile);
+    args.push("--sandbox", typeof cfg.sandbox === "string" ? cfg.sandbox : "workspace-write");
+    if (typeof cfg.model === "string" && cfg.model) args.push("--model", cfg.model);
+    for (const d of job.addDirs) args.push("--add-dir", d);
+    let schemaFile: string | null = null;
     if (job.schema) {
-      prompt += `\n\n## Structured output\nWrite a JSON document matching this schema to out/structured.json:\n\n${JSON.stringify(job.schema, null, 2)}\n`;
+      schemaFile = path.join(job.cwd, "schema.json");
+      await writeJson(schemaFile, job.schema);
+      args.push("--output-schema", schemaFile);
     }
+    if (Array.isArray(cfg.extra_args)) args.push(...cfg.extra_args.map(String));
+    args.push("-"); // prompt on stdin
+
     const res = emptyResult();
     const emit = (type: TraceEvent["type"], payload: unknown) => job.onEvent({ t: nowIso(), type, engine: this.name, payload });
     emit("start", { cmd, args });
     const outcome = await spawnProcess(cmd, args, {
       cwd: job.cwd,
       env: job.env,
-      stdin: prompt,
+      stdin: job.prompt,
       timeoutMs: job.timeoutMs,
       signal: job.signal,
       shell,
@@ -55,22 +60,42 @@ export class CodexEngine implements Engine {
           emit("stdout", line);
           return;
         }
-        const type = String(ev.type ?? ev.msg ?? "");
-        if (/thread|session/.test(type) && typeof ev.thread_id === "string") res.sessionId = ev.thread_id;
-        if (/command|tool|exec|patch/.test(type)) emit(/result|output|end|completed/.test(type) ? "tool_result" : "tool_use", ev);
-        else if (/reasoning/.test(type)) emit("thinking", ev);
-        else if (/usage|token/.test(type) || ev.usage) {
-          const u = (ev.usage ?? ev) as Record<string, number>;
+        const type = String(ev.type ?? "");
+        const item = (ev.item ?? null) as { type?: string; text?: string } | null;
+        if (type === "thread.started" && typeof ev.thread_id === "string") {
+          res.sessionId = ev.thread_id;
+          emit("start", ev);
+        } else if (type === "turn.completed") {
+          const u = (ev.usage ?? {}) as Record<string, number>;
           res.tokens = { input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cache_read: u.cached_input_tokens ?? 0 };
-          emit("text", ev);
+          emit("end", ev);
+        } else if (type.startsWith("item.") && item) {
+          const kind = item.type ?? "";
+          if (kind === "reasoning") emit("thinking", ev);
+          else if (kind === "agent_message") emit("text", { ...ev, text: item.text ?? "" });
+          else if (/command|file_change|tool|mcp|web_search/.test(kind)) emit(type === "item.completed" ? "tool_result" : "tool_use", ev);
+          else emit("text", ev);
+        } else if (type === "error" || type === "turn.failed") {
+          res.error = typeof ev.message === "string" ? ev.message : JSON.stringify(ev);
+          emit("stderr", ev);
         } else emit("text", ev);
       },
     });
     res.exitCode = outcome.code;
     res.timedOut = outcome.timedOut;
     res.aborted = outcome.aborted;
-    if (outcome.code !== 0) res.error = outcome.stderrTail || `exit ${outcome.code}`;
-    emit("end", { exit: outcome.code });
+    if (outcome.code !== 0 && !res.error) res.error = outcome.stderrTail || `exit ${outcome.code}`;
+
+    if (schemaFile && outcome.code === 0) {
+      // With --output-schema the final message is the JSON document.
+      try {
+        const text = await fs.readFile(lastFile, "utf8");
+        res.structuredOutput = JSON.parse(text);
+      } catch {
+        const fallback = await readJsonOrNull(path.join(job.cwd, "out", "structured.json"));
+        if (fallback !== null) res.structuredOutput = fallback;
+      }
+    }
     return res;
   }
 

@@ -36,8 +36,10 @@ rules, large-file signatures).
 - Locks and `before:` pre-checks ✔.
 - Large-file references (`_refs.json`, `--add-dir`) ✔ (untested with real
   multi-GB media).
-- Codex and Gemini adapters: written, **untested** — event parsing is best
-  effort until someone with those CLIs installed runs them.
+- Codex adapter ✔ verified against codex-cli 0.148 (agent node, structured
+  output via `--output-schema`, token usage, trace typing of
+  `file_change`/`command_execution`/`reasoning` items). Gemini adapter:
+  written, **untested**.
 - OpenTimelineIO in `shorts-pipeline`: the edit plan is a portable JSON; the
   `.otio` file is produced by the user's `build_draft` script (contract in
   `examples/shorts-pipeline/scripts/README.md`). No OTIO library in Flowy.
@@ -57,7 +59,8 @@ rules, large-file signatures).
 
 1. Run `examples/video-to-blog` end to end with real scripts (needs the
    user's transcript fetcher).
-2. Test the Codex adapter against a real `codex` install.
+2. Test the Gemini adapter against a real `gemini` install; test
+   `codex exec resume` ordering for feedback reruns.
 3. `flowy stop` on Windows kills the scheduler outright (no SIGINT
    semantics); running engines are orphaned. Use Ctrl+C in the terminal that
    runs `flowy run`, or the viewer's stop button, which aborts in-process.
