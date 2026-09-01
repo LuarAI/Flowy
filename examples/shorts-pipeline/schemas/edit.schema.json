@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Portable edit plan for one short",
+  "type": "object",
+  "required": ["fps", "duration_s", "beats", "audio", "music", "loop"],
+  "additionalProperties": false,
+  "properties": {
+    "fps":        { "type": "integer", "enum": [24, 25, 30, 60] },
+    "duration_s": { "type": "number", "minimum": 1 },
+    "beats": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "vo_start", "vo_end", "master", "screen"],
+        "additionalProperties": false,
+        "properties": {
+          "id":       { "type": "string" },
+          "vo_start": { "type": "number", "minimum": 0 },
+          "vo_end":   { "type": "number", "minimum": 0 },
+          "master":   { "$ref": "#/$defs/range" },
+          "screen":   { "oneOf": [ { "$ref": "#/$defs/range" }, { "type": "null" } ] }
+        }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "required": ["vo", "parts"],
+      "additionalProperties": false,
+      "properties": {
+        "vo":    { "type": "string" },
+        "parts": { "type": "array", "items": { "$ref": "#/$defs/range" } }
+      }
+    },
+    "music": {
+      "type": "object",
+      "required": ["mood", "level_db"],
+      "additionalProperties": false,
+      "properties": {
+        "mood":     { "type": "string" },
+        "level_db": { "type": "number", "maximum": 0 }
+      }
+    },
+    "loop": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["seam_word_index"],
+          "additionalProperties": false,
+          "properties": { "seam_word_index": { "type": "integer", "minimum": 0 } }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "range": {
+      "type": "object",
+      "required": ["start", "end"],
+      "additionalProperties": false,
+      "properties": {
+        "start": { "type": "number", "minimum": 0 },
+        "end":   { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

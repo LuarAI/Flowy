@@ -1,0 +1,40 @@
+flowy: 0
+name: shorts-pipeline
+description: One recording session -> n vertical shorts, with hook/body/title gates, a recorded voice-over, and an editor handoff.
+
+inputs:
+  session_dir:
+    type: path
+    required: true
+    description: Folder with the raw clips (phone video is master audio; optional screen recording)
+  brand_dir:
+    type: path
+    required: true
+    description: Folder containing voice.md, titles-guide.md and music/
+  target_length:
+    type: string
+    default: 45s
+  language:
+    type: string
+    default: es
+
+engine:
+  default: claude
+  claude:
+    permission_mode: dontAsk
+
+concurrency: 3
+locks:
+  gpu: 1       # transcription and rendering starve each other on one card
+  editor: 1    # the editor clobbers external writes to its project while open
+
+nodes:
+  - transcribe
+  - sync-screen
+  - plan
+  - foreach: plan.shorts
+    id: short
+    workflow: ./short
+    key: slug
+    concurrency: 2
+  - wrap-up

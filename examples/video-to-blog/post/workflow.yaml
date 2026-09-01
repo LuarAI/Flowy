@@ -1,0 +1,10 @@
+flowy: 0
+name: post
+description: One teaching -> one drafted, approved, published post. Runs once per item.
+
+# Inputs are inherited from the parent workflow (video, blog_dir, language).
+# The current teaching arrives as `item` (see in/_inputs.json and {{item.*}}).
+
+nodes:
+  - draft
+  - publish

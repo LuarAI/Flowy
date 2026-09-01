@@ -1,0 +1,27 @@
+# Flowy runtime state (per-run outputs, traces, versions). Never commit.
+runs/
+**/runs/
+
+# Local secrets / machine-specific config
+.env
+.env.*
+*.local.yaml
+flowy.local.*
+
+# Node / build
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

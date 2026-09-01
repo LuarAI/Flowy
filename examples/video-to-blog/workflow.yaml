@@ -1,0 +1,34 @@
+flowy: 0
+name: video-to-blog
+description: One long-form video -> n focused blog posts, one per teaching, with a skim gate.
+
+inputs:
+  video:
+    type: string
+    required: true
+    description: Video URL or id understood by scripts/fetch_transcript
+  blog_dir:
+    type: path
+    required: true
+    description: Folder where published posts are written
+  language:
+    type: string
+    default: en
+    description: Language of the posts (the video may be in another language)
+
+engine:
+  default: claude
+  claude:
+    permission_mode: dontAsk
+
+concurrency: 3
+
+nodes:
+  - fetch-transcript
+  - extract-teachings
+  - foreach: extract-teachings.teachings
+    id: post
+    workflow: ./post
+    key: slug
+    concurrency: 2
+  - catalog

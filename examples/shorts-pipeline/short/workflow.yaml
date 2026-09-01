@@ -1,0 +1,16 @@
+flowy: 0
+name: short
+description: One planned short -> hooks, body, voice-over, edit plan, editor draft, polish, titles.
+
+# Inputs and locks are inherited from the parent. The current short arrives
+# as `item` (slug, angle, source_ranges, format, strength).
+
+nodes:
+  - hooks
+  - body
+  - record-vo
+  - transcribe-vo
+  - edit-plan
+  - build-draft
+  - polish
+  - titles

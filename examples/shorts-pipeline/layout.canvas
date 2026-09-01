@@ -1,0 +1,16 @@
+{
+  "nodes": [
+    { "id": "transcribe",  "type": "text", "text": "transcribe\nscript · lock gpu",        "x": 0,   "y": 0,   "width": 220, "height": 70 },
+    { "id": "sync-screen", "type": "text", "text": "sync-screen\nscript",                  "x": 280, "y": 0,   "width": 220, "height": 70 },
+    { "id": "plan",        "type": "text", "text": "plan\nagent · schema · gate",          "x": 0,   "y": 140, "width": 220, "height": 70 },
+    { "id": "short",       "type": "text", "text": "short\nforeach: hooks (gate) → body (chat) → record-vo (wait) → transcribe-vo → edit-plan → build-draft (lock editor) → polish (wait) → titles (gate)", "x": 0, "y": 280, "width": 500, "height": 120 },
+    { "id": "wrap-up",     "type": "text", "text": "wrap-up\nagent",                       "x": 0,   "y": 460, "width": 220, "height": 70 }
+  ],
+  "edges": [
+    { "id": "e1", "fromNode": "transcribe",  "toNode": "sync-screen" },
+    { "id": "e2", "fromNode": "transcribe",  "toNode": "plan" },
+    { "id": "e3", "fromNode": "plan",        "toNode": "short" },
+    { "id": "e4", "fromNode": "sync-screen", "toNode": "short" },
+    { "id": "e5", "fromNode": "short",       "toNode": "wrap-up" }
+  ]
+}
