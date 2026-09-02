@@ -104,7 +104,7 @@ function StepPaper({ state, target, act, onClose }: Props & { target: Extract<Pa
       <h1>{v.title}</h1>
       <div className="sub">
         {itemParam ? `${addr.item!.id} · ` : ""}
-        {humanMode(v.mode)}
+        {humanMode(v.mode, v.recipe)}
         {v.result?.duration_ms ? ` · ${Math.round(v.result.duration_ms / 1000)}s` : ""}
         {v.result?.cost_usd ? ` · ≈$${v.result.cost_usd.toFixed(2)}` : ""}
         {` · ${humanStatus(v)}`}
@@ -242,6 +242,11 @@ function StepPaper({ state, target, act, onClose }: Props & { target: Extract<Pa
         {(v.mode === "agent" || v.mode === "chat") && v.version && !yours && (
           <button className="ghost" onClick={() => get<{ command: string }>("/api/chat-command", { run: runId, ...addrParams(addr) }).then((r) => setChatCmd(r.command))}>
             continue in a terminal
+          </button>
+        )}
+        {v.mode === "chat" && v.result?.session_id && (
+          <button className="ghost" onClick={() => act(() => post("/api/crystallize", { run: runId, node: addr.node, item: itemParam }))}>
+            <Pencil size={13} /> {v.recipe ? "update the recipe from this chat" : "turn this chat into the recipe"}
           </button>
         )}
       </div>

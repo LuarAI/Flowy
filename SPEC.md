@@ -142,6 +142,8 @@ Field reference:
 | `engine` | no | `claude`, `codex`, `gemini`, … |
 | `model` | no | engine model override for this node (e.g. `haiku`, `opus`); agent/chat only |
 | `effort` | no | engine effort override for this node; agent/chat only |
+| `recipe` | no | chat only; written by Flowy when the node crystallizes (§2.5) — the body is now the learned recipe and the node runs headless |
+| `continues` | no | agent/chat only; branch semantics — resume a fork of the named node's session, inheriting its conversation (§2.5). Implies a `needs` edge. |
 | `run` | `script` only | the command to execute (§2.2) |
 | `hint` | `wait` only | one line shown to the human |
 
@@ -209,6 +211,46 @@ the agent until the outputs exist, then closes the session or runs
 `flowy done <node>`. Use `chat` when the step is a conversation by nature
 ("develop the body with me"), not for review — reviews use `approve` on an
 `agent` node.
+
+Chat is also how a workflow is *taught*: the first run of a chat node is the
+demonstration, and when it completes, the conversation crystallizes into a
+recipe (§2.5) so every later run happens headless.
+
+### 2.5 Recipes and branches
+
+**Crystallization.** When a chat node's conversation ends with its outputs
+in place, Flowy resumes a *fork* of that session headless and asks for the
+recipe: the instruction that would produce this step's outputs again for new
+inputs, with everything the human corrected folded in as standing rules. The
+recipe becomes the node's **body**, and Flowy sets `recipe: true` in the
+frontmatter. From then on the node executes as an `agent` node — the
+conversation happened once; the learning is permanent, reviewable, and
+editable (it is just the node file).
+
+The workflow keeps learning:
+
+- `flowy chat` on the node any time reopens the conversation; when it ends,
+  the recipe is re-distilled with the new corrections.
+- A `flowy rerun --feedback "…"` that succeeds on a recipe node re-distills
+  the recipe so the same correction is never needed twice.
+- `flowy recipe <node>` triggers distillation manually (also for agent
+  nodes, where it rewrites the body without setting `recipe:`).
+
+Crystallization edits the authoring file, updates the run's frozen manifest
+to match, and refreshes the current version's signature — learning never
+marks a node stale against its own recipe. The trace of the distillation is
+kept as `crystallize.jsonl` in the version directory.
+
+**Branches.** `continues: <node>` gives a node the parent's *memory*, not
+just its files: at run time the engine resumes a **fork** of the parent's
+current session. The original session is never appended to, and on a replay
+the parent produces a fresh session for branches to fork — the memory chain
+rebuilds itself with the new content. `continues` implies a dependency edge;
+both nodes must use the same engine, and it requires an engine with the
+`resume` capability (falls back to a plain run otherwise). Use file-passing
+(`needs`) between stages and branches only for "continue this same working
+session" — forked sessions carry the whole conversation, and long chains
+grow context and cost.
 
 ---
 
@@ -625,6 +667,7 @@ flowy approve <node> [--item <fe>/<id>] --set k=v ...
 flowy rerun <node> [--item ...] [--feedback "..."]
 flowy use <node> <version>
 flowy chat <node> [--item ...]
+flowy recipe <node> [--item ...]          distill the conversation into the recipe (§2.5)
 flowy done <node> [--item ...]            mark a wait/chat node complete
 flowy skip <foreach>/<item-id> [--undo]
 flowy stop [dir]

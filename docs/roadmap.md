@@ -55,6 +55,18 @@ rules, large-file signatures).
   file across workflows by reference); editing structural frontmatter
   (mode, outputs, approve) from the viewer.
 
+## Recipes and branches (added 2026-09-02) ✔
+
+Demonstrate → crystallize → replay (DECISIONS D16): chat nodes distill
+their finished conversation into the node body (`recipe: true`), then run
+headless; feedback reruns and re-opened chats re-distill; `continues:`
+forks the parent node's session for branch memory. `flowy recipe`,
+auto-crystallize after `flowy chat`, viewer button on chat papers.
+
+**Open:** branch feedback flowing back into the *parent's* recipe;
+a canvas gesture for "repeat this chain for each item of a list"
+(today: wrap it as a foreach sub-workflow by hand or via your agent).
+
 ## Viewer backlog (agreed 2026-09, not yet built)
 
 The format stays as is; these are view-layer changes:

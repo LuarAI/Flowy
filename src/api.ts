@@ -13,6 +13,7 @@ import { missingOutputs, nodeView, readVersionText, runOverview, type NodeView, 
 import type { ApproveField, Manifest, NodeAddr, NodeResult, TraceEvent } from "./core/types.js";
 import { EngineRegistry } from "./engines/index.js";
 import { promises as fs } from "node:fs";
+import { randomUUID } from "node:crypto";
 
 export { addrLabel };
 
@@ -156,6 +157,18 @@ export async function rerun(store: RunStore, addr: NodeAddr, opts: RerunOptions 
   );
   await updateItemStates(store);
   if (out.kind === "cached") throw new Error("unexpected cache hit on a forced rerun");
+
+  // A successful feedback rerun on a recipe node updates the recipe — the
+  // workflow learns from the correction (SPEC §2.5).
+  const spec = store.manifest.nodes[addr.node];
+  if (out.result.status === "done" && opts.feedback && spec.mode === "chat" && spec.recipe) {
+    try {
+      const { crystallizeNode } = await import("./core/crystallize.js");
+      await crystallizeNode(store, addr, opts.engines ?? new EngineRegistry(), { log: opts.log, env: opts.env });
+    } catch (e) {
+      opts.log?.(`(recipe not updated: ${(e as Error).message})`);
+    }
+  }
   return out.result;
 }
 
@@ -186,9 +199,15 @@ export async function markDone(store: RunStore, addr: NodeAddr): Promise<void> {
   await updateItemStates(store);
 }
 
-// ---- chat --------------------------------------------------------------------
+// ---- chat & recipes ----------------------------------------------------------
 
-export async function chat(store: RunStore, addr: NodeAddr, engines = new EngineRegistry(), env: NodeJS.ProcessEnv = process.env): Promise<number> {
+export async function chat(
+  store: RunStore,
+  addr: NodeAddr,
+  engines = new EngineRegistry(),
+  env: NodeJS.ProcessEnv = process.env,
+  opts: { log?: Logger } = {},
+): Promise<{ code: number; crystallized: boolean }> {
   const spec = store.manifest.nodes[addr.node];
   if (!spec) throw new Error(`unknown node "${addr.node}"`);
   if (spec.mode !== "chat" && spec.mode !== "agent") throw new Error(`"${addr.node}" is a ${spec.mode} node; chat applies to chat and agent nodes`);
@@ -206,17 +225,41 @@ export async function chat(store: RunStore, addr: NodeAddr, engines = new Engine
   const refs = await fs.readFile(path.join(vdir, "in", "_refs.json"), "utf8").catch(() => "[]");
   const addDirs = [...new Set((JSON.parse(refs) as Array<{ path: string }>).map((r) => path.dirname(r.path)))];
   const { engineConfigFor } = await import("./core/status.js");
+  const sessionId = result?.session_id ?? randomUUID();
   const code = await engine.interactive({
     cwd: vdir,
     promptFile,
     resumeSession: result?.session_id ?? null,
+    sessionId,
     addDirs,
     config: engineConfigFor(store, spec),
     env,
   });
-  await settleWaiting({ store, engines, signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr);
+  if (result && !result.session_id) {
+    result.session_id = sessionId;
+    await store.writeResult(vdir, result);
+  }
+  const settled = await settleWaiting({ store, engines, signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr);
   await updateItemStates(store);
-  return code;
+
+  // A finished conversation on a chat node crystallizes into the recipe (SPEC §2.5).
+  let crystallized = false;
+  const done = settled || (await nodeView(store, addr, { checkStale: false })).status === "done";
+  if (spec.mode === "chat" && done && engine.capabilities.includes("resume")) {
+    try {
+      const { crystallizeNode } = await import("./core/crystallize.js");
+      await crystallizeNode(store, addr, engines, { log: opts.log, env });
+      crystallized = true;
+    } catch (e) {
+      opts.log?.(`(recipe not learned: ${(e as Error).message})`);
+    }
+  }
+  return { code, crystallized };
+}
+
+export async function crystallize(store: RunStore, addr: NodeAddr, engines = new EngineRegistry(), log?: Logger): Promise<{ recipe: string; file: string }> {
+  const { crystallizeNode } = await import("./core/crystallize.js");
+  return crystallizeNode(store, addr, engines, { log });
 }
 
 // ---- inspection --------------------------------------------------------------

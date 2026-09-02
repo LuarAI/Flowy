@@ -30,6 +30,7 @@ export class MockEngine implements Engine {
     const written = new Set<string>();
     let fail: string | null = null;
     let noDefaults = false;
+    res.text = `mock answer${job.resumeSession ? ` (resumed ${job.resumeSession}${job.forkSession ? ", forked" : ""})` : ""}`;
     for (const raw of job.prompt.split("\n")) {
       const line = raw.trim();
       let m: RegExpExecArray | null;
@@ -39,6 +40,8 @@ export class MockEngine implements Engine {
         emit("tool_use", { name: "Write", input: { file_path: `out/${m[1]}` } });
       } else if ((m = /^MOCK_JSON\s+<<<\s?(.*)$/.exec(line))) {
         res.structuredOutput = JSON.parse(m[1]);
+      } else if ((m = /^MOCK_TEXT\s+<<<\s?(.*)$/.exec(line))) {
+        res.text = m[1];
       } else if ((m = /^MOCK_FAIL\s*(.*)$/.exec(line))) {
         fail = m[1] || "mock failure";
       } else if ((m = /^MOCK_SLEEP\s+(\d+)$/.exec(line))) {

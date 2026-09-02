@@ -85,7 +85,10 @@ export class ClaudeEngine implements Engine {
     if (cfg.partial === true) args.push("--include-partial-messages");
     if (job.tools.length) args.push("--allowedTools", job.tools.join(","));
     if (job.schema && !shell) args.push("--json-schema", JSON.stringify(job.schema));
-    if (job.resumeSession) args.push("--resume", job.resumeSession);
+    if (job.resumeSession) {
+      args.push("--resume", job.resumeSession);
+      if (job.forkSession) args.push("--fork-session");
+    }
     for (const d of job.addDirs) args.push("--add-dir", d);
     if (typeof cfg.model === "string" && cfg.model) args.push("--model", cfg.model);
     if (typeof cfg.effort === "string" && cfg.effort) args.push("--effort", cfg.effort);
@@ -133,6 +136,7 @@ export class ClaudeEngine implements Engine {
           if (!blocks.length) emit("text", ev);
         } else if (type === "result") {
           if (typeof ev.session_id === "string") res.sessionId = ev.session_id;
+          if (typeof ev.result === "string") res.text = ev.result;
           if (typeof ev.total_cost_usd === "number") res.costUsd = ev.total_cost_usd;
           if (typeof ev.num_turns === "number") res.turns = ev.num_turns;
           const u = ev.usage as Record<string, number> | undefined;
@@ -164,6 +168,7 @@ export class ClaudeEngine implements Engine {
     const useShell = process.platform === "win32" && !pre.length;
     const args = [...pre];
     if (job.resumeSession) args.push("--resume", job.resumeSession);
+    else if (job.sessionId) args.push("--session-id", job.sessionId);
     for (const d of job.addDirs) args.push("--add-dir", d);
     if (typeof job.config.model === "string" && job.config.model) args.push("--model", job.config.model);
     args.push(`Read ${path.basename(job.promptFile)} in this directory and follow it. Inputs are in ./in, outputs go to ./out.`);

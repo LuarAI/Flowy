@@ -180,8 +180,30 @@ program
   .action(async (node: string, o: { dir: string; run?: string; item?: string }) => {
     try {
       const store = await api.getStore(path.resolve(o.dir), o.run);
-      const code = await api.chat(store, parseAddr(node, o.item), engines);
-      out(`session ended (${code}). If the outputs are in place the node is done; otherwise run \`flowy done ${node}\` once they are.`);
+      const r = await api.chat(store, parseAddr(node, o.item), engines, process.env, { log: out });
+      out(
+        r.crystallized
+          ? `session ended — and the recipe is learned: next time this step runs by itself.`
+          : `session ended (${r.code}). If the outputs are in place the node is done; otherwise run \`flowy done ${node}\` once they are.`,
+      );
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+program
+  .command("recipe <node>")
+  .description("distill the node's finished conversation into its recipe (it then runs headless next time)")
+  .option("-d, --dir <dir>", "workflow folder", ".")
+  .option("-r, --run <id>")
+  .option("--item <foreach/item-id>")
+  .action(async (node: string, o: { dir: string; run?: string; item?: string }) => {
+    try {
+      const store = await api.getStore(path.resolve(o.dir), o.run);
+      const r = await api.crystallize(store, parseAddr(node, o.item), engines, out);
+      out(`recipe written to ${r.file}:`);
+      out("");
+      out(r.recipe.split("\n").slice(0, 12).join("\n") + (r.recipe.split("\n").length > 12 ? "\n…" : ""));
     } catch (e) {
       fail(e);
     }

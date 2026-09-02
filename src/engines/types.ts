@@ -9,6 +9,8 @@ export interface EngineJob {
   schema: Record<string, unknown> | null;
   timeoutMs: number;
   resumeSession: string | null;
+  /** With resumeSession: continue as a NEW forked session, leaving the original untouched. */
+  forkSession: boolean;
   addDirs: string[];
   /** The `engine.<name>` block from workflow.yaml, passed through. */
   config: Record<string, unknown>;
@@ -24,6 +26,8 @@ export interface EngineResult {
   tokens: { input: number; output: number; cache_read: number } | null;
   turns: number | null;
   structuredOutput: unknown;
+  /** The engine's final answer text, when it reports one (used by crystallization). */
+  text: string | null;
   error: string | null;
   timedOut: boolean;
   aborted: boolean;
@@ -34,6 +38,8 @@ export interface InteractiveJob {
   /** Absolute path of prompt.md in cwd; engines open the session pointing at it. */
   promptFile: string;
   resumeSession: string | null;
+  /** Ask the engine to use this session id, so the conversation can be resumed later. */
+  sessionId: string | null;
   addDirs: string[];
   config: Record<string, unknown>;
   env: NodeJS.ProcessEnv;
@@ -57,6 +63,7 @@ export function emptyResult(): EngineResult {
     tokens: null,
     turns: null,
     structuredOutput: undefined,
+    text: null,
     error: null,
     timedOut: false,
     aborted: false,

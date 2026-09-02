@@ -42,6 +42,10 @@ export interface NodeSpec {
   engine: string | null;
   model: string | null;
   effort: string | null;
+  /** True once a chat node has crystallized: the body is the learned recipe and the node runs headless. */
+  recipe: boolean;
+  /** Branch semantics: this node resumes (a fork of) the named node's session, inheriting its conversation. */
+  continues: string | null;
   run: string | RunCommand | null;
   hint: string | null;
   /** The markdown body: the prompt (agent/chat) or a description (script/wait). */

@@ -40,8 +40,14 @@ prompt, the workflow is wrong.
    - `script` — a command (`run:`). Whisper, ffmpeg, pandoc, a Python file.
    - `wait` — the human does something and drops a file in `out/`.
    - `chat` — an interactive session for steps that are conversations.
-   Prefer `agent` + `approve:` over `chat` for reviews. Use `chat` only when
-   the step genuinely needs back-and-forth to produce its output.
+   Prefer `agent` + `approve:` over `chat` for reviews. When the human
+   cannot spell out the step in advance, make it `chat` with a short
+   intent body: the first run is the demonstration, and the conversation
+   crystallizes into the recipe automatically (`recipe: true` appears and
+   the body becomes the learned instruction — never hand-write
+   `recipe: true` yourself). `continues: <node>` makes a node a branch of
+   another's session — use it for "keep working in the same conversation",
+   not instead of `needs` file-passing.
 3. **Declare `outputs:` exactly.** The runner verifies them. An agent node
    that "answers in chat" and writes nothing fails. Tell the prompt to write
    `out/<file>` explicitly.

@@ -38,6 +38,8 @@ export interface NodeView {
   needs: string[];
   outputs: string[];
   approveFields: Record<string, { type: string; required?: boolean; description?: string }> | null;
+  recipe: boolean;
+  continues: string | null;
 }
 
 export interface ItemView {
@@ -69,7 +71,7 @@ export interface Manifest {
   name: string;
   description: string;
   inputs: Record<string, { type: string; required?: boolean; default?: unknown; description?: string }>;
-  nodes: Record<string, { id: string; mode: string; needs: string[]; approve: unknown; lock: string | null; foreach: string | null; outputs: string[]; title: string }>;
+  nodes: Record<string, { id: string; mode: string; needs: string[]; approve: unknown; lock: string | null; foreach: string | null; outputs: string[]; title: string; context?: string[]; recipe?: boolean; continues?: string | null }>;
   foreach: Record<string, { id: string; source: { node: string; key: string }; nodes: string[]; needs: string[] }>;
   top: string[];
   edges: Array<{ from: string; to: string }>;

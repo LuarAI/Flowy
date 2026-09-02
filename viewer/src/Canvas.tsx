@@ -8,8 +8,9 @@ import { Check, Folder, FileIcon, Box } from "./icons";
 const NEEDS_YOU = ["gate", "waiting"];
 const WRONG = ["failed", "blocked", "missing_output", "schema_invalid", "timeout", "interrupted"];
 
-export function humanMode(mode: string): string {
-  return mode === "agent" ? "Claude does it" : mode === "chat" ? "you + Claude" : mode === "wait" ? "you do it" : "runs a tool";
+export function humanMode(mode: string, recipe?: boolean): string {
+  if (mode === "chat") return recipe ? "knows the recipe" : "you + Claude, first time";
+  return mode === "agent" ? "Claude does it" : mode === "wait" ? "you do it" : "runs a tool";
 }
 
 export function humanStatus(v: NodeView): string {
@@ -71,7 +72,7 @@ function StepCard({ data }: NodeProps<StepNode>) {
         {v.status === "running" && <span className="dots">···</span>}
       </div>
       <div className="sub">
-        {humanMode(v.mode)}
+        {humanMode(v.mode, v.recipe)}
         {v.result?.duration_ms ? ` · ${Math.round(v.result.duration_ms / 1000)}s` : ""}
         {v.status === "stale" ? " · needs a refresh" : ""}
       </div>
@@ -311,5 +312,7 @@ function placeholderView(m: Manifest, id: string): NodeView {
     needs: n?.needs ?? [],
     outputs: n?.outputs ?? [],
     approveFields: null,
+    recipe: n?.recipe ?? false,
+    continues: n?.continues ?? null,
   };
 }

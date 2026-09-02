@@ -50,6 +50,8 @@ const NODE_KEYS = new Set([
   "engine",
   "model",
   "effort",
+  "recipe",
+  "continues",
   "run",
   "hint",
 ]);
@@ -212,6 +214,11 @@ export async function compileWorkflow(dir: string, opts: CompileOptions = {}): P
   for (const spec of Object.values(nodes)) {
     const file = rel(spec.file);
     if (spec.engine && !engines.includes(spec.engine)) issues.push({ file, message: `engine "${spec.engine}" is not one of ${engines.join(", ")}` });
+    if (spec.continues) {
+      const parent = nodes[spec.continues];
+      if (parent && parent.mode !== "agent" && parent.mode !== "chat") issues.push({ file, message: `continues "${spec.continues}": can only continue an agent or chat node's session` });
+      if (parent && (parent.engine ?? null) !== (spec.engine ?? null)) issues.push({ file, message: `continues "${spec.continues}": both nodes must use the same engine` });
+    }
     if (spec.lock && !(spec.lock in locks)) issues.push({ file, message: `lock "${spec.lock}" is not declared under locks: in workflow.yaml` });
     for (const t of findTemplates(spec.body + " " + spec.context.join(" ") + " " + (typeof spec.run === "string" ? spec.run : JSON.stringify(spec.run ?? "")) + " " + spec.before.join(" "))) {
       if (t.ns === "inputs" && !(t.key in inputs)) issues.push({ file, message: `references {{inputs.${t.key}}} which is not declared` });
@@ -420,6 +427,12 @@ async function loadNode(
   const model = d.model === undefined || d.model === null ? null : String(d.model);
   const effort = d.effort === undefined || d.effort === null ? null : String(d.effort);
   if ((model || effort) && mode !== "agent" && mode !== "chat") push(model ? "model" : "effort", "model/effort apply only to agent and chat nodes");
+  const recipe = d.recipe === true;
+  if (d.recipe !== undefined && typeof d.recipe !== "boolean") push("recipe", "recipe must be true or false");
+  if (recipe && mode !== "chat") push("recipe", "recipe applies only to chat nodes (agent bodies are already the instruction)");
+  const continues = d.continues === undefined || d.continues === null ? null : String(d.continues);
+  if (continues && mode !== "agent" && mode !== "chat") push("continues", "continues applies only to agent and chat nodes");
+  if (continues && !needs.includes(continues)) needs.push(continues); // a branch depends on its parent
 
   let run: NodeSpec["run"] = null;
   if (mode === "script") {
@@ -460,6 +473,8 @@ async function loadNode(
     engine,
     model,
     effort,
+    recipe,
+    continues,
     run,
     hint,
     body: fm.body,

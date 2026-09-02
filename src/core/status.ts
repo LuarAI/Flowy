@@ -109,6 +109,8 @@ export interface NodeView {
   needs: string[];
   outputs: string[];
   approveFields: NodeSpec["approve"];
+  recipe: boolean;
+  continues: string | null;
 }
 
 /** Derive a node's display/scheduling status (SPEC §6.4, §13). */
@@ -138,6 +140,8 @@ export async function nodeView(store: RunStore, addr: NodeAddr, opts: { checkSta
     needs: spec.needs,
     outputs: spec.outputs,
     approveFields: spec.approve,
+    recipe: spec.recipe,
+    continues: spec.continues,
   };
   if (opts.itemState === "skipped" || opts.itemState === "orphaned") return { ...base, status: opts.itemState };
   if (!vdir || !result) return base;

@@ -214,6 +214,12 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         schedulePush();
         return { ok: true };
       }
+      case "/api/crystallize": {
+        const s = await store();
+        const r = await api.crystallize(s, addr(), opts.engines, log);
+        schedulePush();
+        return { recipe: r.recipe };
+      }
       case "/api/layout":
         await updatePositions(dir, (body.positions as Record<string, { x: number; y: number }>) ?? {});
         return { ok: true };

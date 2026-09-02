@@ -170,6 +170,23 @@ No personal paths, real names, emails, private project details, or brand
 internals in examples, docs, fixtures, or tests. Examples are anonymised
 versions of real pipelines.
 
+## D16 — Workflows are demonstrated, then crystallized — not authored cold.
+
+The primary way a step comes into existence: the human has the conversation
+(a `chat` node), the work gets done, and the conversation distills into a
+**recipe** — the node's body, with the human's corrections folded in as
+standing rules. Later runs execute the recipe headless; feedback reruns and
+re-opened chats re-distill it. `continues:` gives a node the parent
+conversation's memory via session forking, replay-stable because a re-run
+parent yields a fresh session for branches to fork.
+
+**Why:** the user's own hand-drawn exploration (2026-09): workflows in real
+life start as chats wired to context, not as prompts written in advance.
+Verbatim replay of the chat is brittle (corrections reference the old
+batch); a distilled recipe is robust, reviewable (it is just the node file,
+diffable in git) and keeps chat as the escape hatch — "teach it once, then
+it just does it, and you can always re-teach." Recorded 2026-09-02.
+
 ## D15 — Pinned external facts to re-check before v1
 
 - Claude Code `--bare` is slated to become the default for `-p`; bare mode

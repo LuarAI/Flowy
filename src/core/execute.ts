@@ -149,14 +149,17 @@ export async function executeNode(ctx: ExecContext, addr: NodeAddr, opts: ExecOp
 
     const trace = traceWriter(path.join(vdir, "trace.jsonl"));
 
-    if (spec.mode === "wait" || spec.mode === "chat") {
+    // A chat node with a crystallized recipe runs headless like an agent (SPEC §2.5).
+    const effectiveMode = spec.mode === "chat" && spec.recipe && spec.body.trim() ? "agent" : spec.mode;
+
+    if (effectiveMode === "wait" || effectiveMode === "chat") {
       await trace.close();
       const missing = await missingOutputs(spec, vdir);
       if (missing.length === 0) return await finish("done", { exit_code: 0 });
       return await finish("waiting");
     }
 
-    if (spec.mode === "script") {
+    if (effectiveMode === "script") {
       const runCmd = resolveTemplate(pickRun(spec), tctx);
       const sh = platformShell();
       const out = fs.open(path.join(vdir, "stdout.log"), "w");
@@ -190,9 +193,23 @@ export async function executeNode(ctx: ExecContext, addr: NodeAddr, opts: ExecOp
     }
 
     // agent
-    const en = engineName(store, spec);
     const prevResult = previousDir ? await store.readResult(previousDir) : null;
-    const resume = opts.force && prevResult?.session_id && engine!.capabilities.includes("resume") ? prevResult.session_id : null;
+    let resume: string | null = null;
+    let fork = false;
+    if (opts.force && prevResult?.session_id && engine!.capabilities.includes("resume")) {
+      // Feedback rerun: continue this node's own conversation.
+      resume = prevResult.session_id;
+    } else if (spec.continues && engine!.capabilities.includes("resume")) {
+      // Branch: fork the parent node's session, inheriting its memory (SPEC §2.5).
+      const parentSpec = store.manifest.nodes[spec.continues];
+      const parentAddr: NodeAddr = parentSpec?.foreach && addr.item ? { node: spec.continues, item: addr.item } : { node: spec.continues };
+      const pdir = await store.currentDir(parentAddr);
+      const pres = pdir ? await store.readResult(pdir) : null;
+      if (pres?.session_id) {
+        resume = pres.session_id;
+        fork = true;
+      }
+    }
     const er = await engine!.run({
       cwd: vdir,
       prompt: preamble + prompt,
@@ -201,6 +218,7 @@ export async function executeNode(ctx: ExecContext, addr: NodeAddr, opts: ExecOp
       schema,
       timeoutMs: spec.timeoutMs,
       resumeSession: resume,
+      forkSession: fork,
       addDirs: mat.addDirs,
       config: engineConfigFor(store, spec),
       env,

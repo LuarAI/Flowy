@@ -4,8 +4,8 @@
       "id": "angles",
       "type": "text",
       "text": "angles\nagent · gate",
-      "x": -321,
-      "y": 17,
+      "x": -369,
+      "y": 20,
       "width": 220,
       "height": 72
     },
@@ -13,8 +13,8 @@
       "id": "entry",
       "type": "text",
       "text": "entry\nforeach angles.angles: outline → write",
-      "x": -35,
-      "y": 142,
+      "x": 18,
+      "y": 40,
       "width": 340,
       "height": 96
     },
@@ -22,8 +22,8 @@
       "id": "index",
       "type": "text",
       "text": "index\nagent",
-      "x": 49,
-      "y": 450,
+      "x": 415,
+      "y": 538,
       "width": 220,
       "height": 72
     }
