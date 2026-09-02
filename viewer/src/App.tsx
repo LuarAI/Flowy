@@ -1,48 +1,34 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Canvas } from "./Canvas";
-import { NodePanel } from "./NodePanel";
-import { Toolbar } from "./Toolbar";
+import { Header } from "./Header";
+import { Paper, type PaperTarget } from "./Paper";
 import { get, post, type NodeAddr, type State } from "./client";
 
 export function App() {
   const [state, setState] = useState<State | null>(null);
-  const [runId, setRunId] = useState<string | undefined>(undefined);
-  const [selected, setSelected] = useState<NodeAddr | null>(null);
-  const [selectedItem, setSelectedItem] = useState<{ foreach: string; id: string } | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [paper, setPaper] = useState<PaperTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showLog, setShowLog] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
 
-  const refresh = useCallback(async (id?: string) => {
+  const refresh = useCallback(async () => {
     try {
-      const s = await get<State>("/api/state", { run: id });
+      const s = await get<State>("/api/state");
       setState(s);
-      setLogs(s.logs);
-      setError(null);
     } catch (e) {
       setError((e as Error).message);
     }
   }, []);
 
   useEffect(() => {
-    void refresh(runId);
+    void refresh();
     const proto = location.protocol === "https:" ? "wss" : "ws";
     let ws: WebSocket;
     let closed = false;
     const connect = () => {
       ws = new WebSocket(`${proto}://${location.host}/ws`);
-      wsRef.current = ws;
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
-        if (msg.type === "state") {
-          // The server pushes the running run's state; if the user is looking at another run, refetch that one.
-          if (!runId || msg.state.overview?.run?.id === runId) {
-            setState(msg.state);
-            setLogs(msg.state.logs);
-          } else void refresh(runId);
-        } else if (msg.type === "log") setLogs((l) => [...l.slice(-300), msg.message]);
-        else if (msg.type === "node" || msg.type === "running") void refresh(runId);
+        if (msg.type === "state") setState(msg.state);
+        else if (msg.type === "node" || msg.type === "running") void refresh();
         else if (msg.type === "error") setError(msg.message);
       };
       ws.onclose = () => {
@@ -50,101 +36,56 @@ export function App() {
       };
     };
     connect();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPaper(null);
+    };
+    window.addEventListener("keydown", onKey);
     return () => {
       closed = true;
       ws.close();
+      window.removeEventListener("keydown", onKey);
     };
-  }, [runId, refresh]);
+  }, [refresh]);
 
   const act = useCallback(
     async (fn: () => Promise<unknown>) => {
       try {
         await fn();
         setError(null);
-        await refresh(runId);
+        await refresh();
       } catch (e) {
         setError((e as Error).message);
       }
     },
-    [refresh, runId],
+    [refresh],
   );
 
-  if (!state) return <div className="empty">{error ?? "connecting…"}</div>;
+  if (!state) {
+    return (
+      <div className="app" style={{ alignItems: "center", justifyContent: "center" }}>
+        <div className="hand muted" style={{ fontSize: 20 }}>
+          {error ?? "opening the workflow…"}
+        </div>
+      </div>
+    );
+  }
 
-  const ov = state.overview;
+  const openStep = (a: NodeAddr) => setPaper({ kind: "step", addr: a });
+  const openItem = (fe: string, id: string) => setPaper({ kind: "item", foreach: fe, id });
+
   return (
     <div className="app">
-      <Toolbar
-        state={state}
-        runId={runId}
-        onSelectRun={(id) => {
-          setRunId(id);
-          setSelected(null);
-          setSelectedItem(null);
-        }}
-        onRun={(opts) => act(() => post("/api/run", opts))}
-        onStop={() => act(() => post("/api/stop"))}
-        onToggleLog={() => setShowLog((v) => !v)}
-        showLog={showLog}
-      />
+      <Header state={state} onRun={(opts) => act(() => post("/api/run", opts))} onStop={() => act(() => post("/api/stop"))} />
       {error && (
-        <div className="banner error" onClick={() => setError(null)}>
+        <div className="err-note" onClick={() => setError(null)}>
           {error}
         </div>
       )}
-      {state.compileError && <div className="banner error pre">{state.compileError}</div>}
-      {state.liveManifestDiffers && !state.compileError && (
-        <div className="banner warn">The workflow files changed since this run was compiled. New runs use the new files; resume this run with “recompile” to pick them up.</div>
-      )}
-      <div className="main">
-        <div className="canvas-wrap">
-          <Canvas
-            state={state}
-            selected={selected}
-            selectedItem={selectedItem}
-            onSelect={(a) => {
-              setSelected(a);
-              setSelectedItem(null);
-            }}
-            onSelectItem={(fe, id) => {
-              setSelectedItem({ foreach: fe, id });
-              setSelected(null);
-            }}
-            onMove={(positions) => post("/api/layout", { positions })}
-            onConnect={(from, to) => act(() => post("/api/graph/edge", { op: "add", from, to }))}
-            onRemoveEdge={(from, to) => act(() => post("/api/graph/edge", { op: "remove", from, to }))}
-            onAddNode={(n) => act(() => post("/api/graph/node", n))}
-            onRemoveNode={(id) => act(() => post("/api/graph/node", { op: "remove", id }))}
-          />
-        </div>
-        {(selected || selectedItem) && (
-          <div className="panel">
-            <NodePanel
-              key={selected ? `${selected.node}:${selected.item?.id ?? ""}` : `item:${selectedItem?.foreach}/${selectedItem?.id}`}
-              state={state}
-              runId={ov?.run.id}
-              addr={selected}
-              item={selectedItem}
-              onSelect={(a) => {
-                setSelected(a);
-                setSelectedItem(null);
-              }}
-              onClose={() => {
-                setSelected(null);
-                setSelectedItem(null);
-              }}
-              act={act}
-            />
-          </div>
-        )}
+      {state.compileError && <div className="err-note" style={{ top: 60 }}>{state.compileError}</div>}
+      <div className="canvas-wrap">
+        <Canvas state={state} onOpen={openStep} onOpenItem={openItem} onMove={(positions) => post("/api/layout", { positions })} />
       </div>
-      {showLog && (
-        <div className="log">
-          {logs.slice(-200).map((l, i) => (
-            <div key={i}>{l}</div>
-          ))}
-        </div>
-      )}
+      {paper && <Paper state={state} target={paper} onOpen={setPaper} onClose={() => setPaper(null)} act={act} />}
     </div>
   );
 }
