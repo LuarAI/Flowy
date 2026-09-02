@@ -201,56 +201,30 @@ label > span {
 }
 .canvas-hint {
   position: absolute;
-  right: 26px;
-  bottom: 18px;
+  right: 16px;
+  bottom: 14px;
   z-index: 5;
   color: var(--muted);
   font-size: 13px;
   pointer-events: none;
 }
-.react-flow__attribution {
-  display: none;
-}
-.react-flow__edge-path {
-  stroke: var(--ink);
-  stroke-width: 1.8;
-}
-.react-flow__edge.running .react-flow__edge-path {
-  stroke-dasharray: 7 6;
-  animation: dashmove 1.2s linear infinite;
-}
-@keyframes dashmove {
-  to {
-    stroke-dashoffset: -13;
-  }
-}
-.react-flow__edge-text {
-  font-family: var(--body);
-  font-size: 11px;
-  fill: var(--muted);
-}
-.react-flow__edge-textbg {
-  fill: var(--paper);
-}
-.react-flow__handle {
-  width: 7px;
-  height: 7px;
-  background: var(--paper);
-  border: 1.5px solid var(--muted);
-}
-.react-flow__controls {
-  box-shadow: none;
+.open-chip {
+  position: absolute;
+  z-index: 6;
+  font-family: var(--hand);
+  font-size: 14px;
+  padding: 3px 12px;
+  background: var(--card);
   border: 2px solid var(--ink);
   border-radius: 10px 4px 12px 5px / 5px 12px 4px 10px;
-  overflow: hidden;
+  cursor: pointer;
+  box-shadow: var(--shadow);
 }
-.react-flow__controls-button {
-  background: var(--card);
-  border-bottom: 1.5px dashed var(--dash);
-  fill: var(--ink);
-}
-.react-flow__controls-button:hover {
+.open-chip:hover {
   background: #f3efe6;
+}
+.excalidraw .App-menu_top .buttonList {
+  gap: 2px;
 }
 
 /* cards on the canvas */

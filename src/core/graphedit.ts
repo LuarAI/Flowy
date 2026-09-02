@@ -34,6 +34,27 @@ export async function removeEdge(dir: string, from: string, to: string): Promise
   await compileWorkflow(dir);
 }
 
+/** Add a context entry to a node (drawing an arrow from a source pill to a step). */
+export async function addContext(dir: string, nodeId: string, entry: string): Promise<void> {
+  const file = await nodeFileFor(dir, nodeId);
+  const fm = parseFrontmatter(await readText(file));
+  const current = Array.isArray(fm.data.context) ? (fm.data.context as string[]) : [];
+  if (!current.includes(entry)) fm.data.context = [...current, entry];
+  await writeText(file, stringifyFrontmatter(fm.data, fm.body));
+  await compileWorkflow(dir);
+}
+
+export async function removeContext(dir: string, nodeId: string, entry: string): Promise<void> {
+  const file = await nodeFileFor(dir, nodeId);
+  const fm = parseFrontmatter(await readText(file));
+  const current = Array.isArray(fm.data.context) ? (fm.data.context as string[]) : [];
+  const next = current.filter((c) => c !== entry);
+  if (next.length) fm.data.context = next;
+  else delete fm.data.context;
+  await writeText(file, stringifyFrontmatter(fm.data, fm.body));
+  await compileWorkflow(dir);
+}
+
 async function editNeeds(file: string, fn: (needs: string[]) => string[]): Promise<void> {
   const text = await readText(file);
   const fm = parseFrontmatter(text);

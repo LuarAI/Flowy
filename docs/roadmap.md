@@ -67,6 +67,20 @@ auto-crystallize after `flowy chat`, viewer button on chat papers.
 a canvas gesture for "repeat this chain for each item of a list"
 (today: wrap it as a foreach sub-workflow by hand or via your agent).
 
+## The canvas IS Excalidraw (2026-09-02) ✔
+
+The viewer embeds the real Excalidraw editor (`@excalidraw/excalidraw`,
+MIT). Flowy draws the workflow as ordinary elements (`fl-*` ids) and maps
+native gestures onto the files: draw a rectangle → a small form makes it a
+step; draw an arrow card→card → a `needs:` edge; arrow pill→card → attaches
+that context file; Delete → removes the node/edge/context (nodes confirm);
+drag → positions persist. Anything else drawn or written is the user's
+sketch, saved to `sketch.excalidraw.json` beside the workflow. A selected
+card shows an "open →" chip that opens its paper.
+
+**Open:** foreach blocks can't be created/deleted from the canvas yet;
+undo of a canvas-mapped action doesn't undo the file edit (redraw instead).
+
 ## Viewer backlog (agreed 2026-09, not yet built)
 
 The format stays as is; these are view-layer changes:

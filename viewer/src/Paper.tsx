@@ -1,11 +1,9 @@
 import { useEffect, useState } from "react";
 import { addrParams, fmtBytes, get, post, type NodeAddr, type NodeDetail, type State } from "./client";
-import { dotColor, humanMode, humanStatus, itemWorst } from "./Canvas";
-import { Box, Check, FileIcon, Pencil, Play, Redo, X } from "./icons";
+import { dotColor, humanMode, humanStatus, itemWorst, WRONG } from "./model";
+import { Check, FileIcon, Pencil, Redo, X } from "./icons";
 
-const WRONG = ["failed", "blocked", "missing_output", "schema_invalid", "timeout", "interrupted"];
-
-export type PaperTarget = { kind: "step"; addr: NodeAddr } | { kind: "item"; foreach: string; id: string };
+export type PaperTarget = { kind: "step"; addr: NodeAddr } | { kind: "item"; foreach: string; id: string } | { kind: "checklist"; foreach: string };
 
 interface Props {
   state: State;
@@ -22,9 +20,42 @@ export function Paper(props: Props) {
         <div className="close" onClick={props.onClose}>
           <X />
         </div>
-        {props.target.kind === "item" ? <ItemPaper {...props} target={props.target} /> : <StepPaper {...props} target={props.target} />}
+        {props.target.kind === "item" ? (
+          <ItemPaper {...props} target={props.target} />
+        ) : props.target.kind === "checklist" ? (
+          <ChecklistPaper {...props} target={props.target} />
+        ) : (
+          <StepPaper {...props} target={props.target} />
+        )}
       </div>
     </div>
+  );
+}
+
+function ChecklistPaper({ state, target, onOpen }: Props & { target: Extract<PaperTarget, { kind: "checklist" }> }) {
+  const fe = state.overview?.foreach.find((f) => f.id === target.foreach) ?? null;
+  if (!fe) return <div className="muted">no items yet — this list appears when the step it reads from finishes</div>;
+  return (
+    <>
+      <h1>{fe.id}</h1>
+      <div className="sub">checklist · from {fe.source}</div>
+      {fe.items.length === 0 && <div className="muted">no items yet — run the step it reads from first</div>}
+      <div className="steps">
+        {fe.items.map((it) => {
+          const w = itemWorst(it);
+          const parked = it.state === "skipped" || it.state === "orphaned";
+          return (
+            <div key={it.id} className="step" onClick={() => onOpen({ kind: "item", foreach: fe.id, id: it.id })}>
+              <span className="dot" style={{ background: dotColor(w.status) }} />
+              <span className={parked ? "strike muted" : ""} style={{ flex: 1 }}>
+                {it.id}
+              </span>
+              <span className="muted small">{w.status}</span>
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -288,4 +319,3 @@ function summarize(p: unknown): string {
   return String(p);
 }
 
-export { Box, Play };

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Canvas } from "./Canvas";
+import { ExCanvas, setFeIds, type OpenTarget } from "./ExCanvas";
 import { Header } from "./Header";
 import { Paper, type PaperTarget } from "./Paper";
-import { get, post, type NodeAddr, type State } from "./client";
+import { get, post, type State } from "./client";
 
 export function App() {
   const [state, setState] = useState<State | null>(null);
@@ -12,6 +12,7 @@ export function App() {
   const refresh = useCallback(async () => {
     try {
       const s = await get<State>("/api/state");
+      setFeIds(s.manifest);
       setState(s);
     } catch (e) {
       setError((e as Error).message);
@@ -27,8 +28,10 @@ export function App() {
       ws = new WebSocket(`${proto}://${location.host}/ws`);
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
-        if (msg.type === "state") setState(msg.state);
-        else if (msg.type === "node" || msg.type === "running") void refresh();
+        if (msg.type === "state") {
+          setFeIds(msg.state.manifest);
+          setState(msg.state);
+        } else if (msg.type === "node" || msg.type === "running") void refresh();
         else if (msg.type === "error") setError(msg.message);
       };
       ws.onclose = () => {
@@ -36,14 +39,9 @@ export function App() {
       };
     };
     connect();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPaper(null);
-    };
-    window.addEventListener("keydown", onKey);
     return () => {
       closed = true;
       ws.close();
-      window.removeEventListener("keydown", onKey);
     };
   }, [refresh]);
 
@@ -70,8 +68,11 @@ export function App() {
     );
   }
 
-  const openStep = (a: NodeAddr) => setPaper({ kind: "step", addr: a });
-  const openItem = (fe: string, id: string) => setPaper({ kind: "item", foreach: fe, id });
+  const open = (t: OpenTarget) => {
+    if (t.kind === "step" && t.addr) setPaper({ kind: "step", addr: t.addr });
+    else if (t.kind === "item" && t.foreach && t.id) setPaper({ kind: "item", foreach: t.foreach, id: t.id });
+    else if (t.kind === "checklist" && t.foreach) setPaper({ kind: "checklist", foreach: t.foreach });
+  };
 
   return (
     <div className="app">
@@ -81,9 +82,13 @@ export function App() {
           {error}
         </div>
       )}
-      {state.compileError && <div className="err-note" style={{ top: 60 }}>{state.compileError}</div>}
+      {state.compileError && (
+        <div className="err-note" style={{ top: 60 }}>
+          {state.compileError}
+        </div>
+      )}
       <div className="canvas-wrap">
-        <Canvas state={state} onOpen={openStep} onOpenItem={openItem} onMove={(positions) => post("/api/layout", { positions })} />
+        <ExCanvas state={state} onOpen={open} onError={setError} />
       </div>
       {paper && <Paper state={state} target={paper} onOpen={setPaper} onClose={() => setPaper(null)} act={act} />}
     </div>

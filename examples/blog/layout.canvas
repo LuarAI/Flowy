@@ -13,8 +13,8 @@
       "id": "entry",
       "type": "text",
       "text": "entry\nforeach angles.angles: outline → write",
-      "x": 18,
-      "y": 40,
+      "x": -104,
+      "y": 307,
       "width": 340,
       "height": 96
     },
@@ -22,8 +22,8 @@
       "id": "index",
       "type": "text",
       "text": "index\nagent",
-      "x": 415,
-      "y": 538,
+      "x": 479,
+      "y": 680,
       "width": 220,
       "height": 72
     }

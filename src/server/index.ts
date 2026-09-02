@@ -6,8 +6,8 @@ import chokidar from "chokidar";
 import { WebSocketServer, type WebSocket } from "ws";
 import * as api from "../api.js";
 import { CompileError, compileWorkflow } from "../core/compile.js";
-import { exists } from "../core/fsutil.js";
-import { addEdge, addNode, removeEdge, removeNode, updateNode } from "../core/graphedit.js";
+import { exists, readJsonOrNull } from "../core/fsutil.js";
+import { addContext, addEdge, addNode, removeContext, removeEdge, removeNode, updateNode } from "../core/graphedit.js";
 import { ensureLayout, readLayout, updatePositions } from "../core/layout.js";
 import { listRuns, loadRun } from "../core/runstore.js";
 import type { EngineRegistry } from "../engines/index.js";
@@ -93,7 +93,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
     try {
       if (url.pathname.startsWith("/api/")) {
         const body = req.method === "POST" ? await readBody(req) : {};
-        const result = await route(url, body);
+        const result = await route(url, body, req.method ?? "GET");
         json(res, 200, result ?? { ok: true });
         return;
       }
@@ -104,7 +104,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
     }
   });
 
-  async function route(url: URL, body: Record<string, unknown>): Promise<unknown> {
+  async function route(url: URL, body: Record<string, unknown>, method: string): Promise<unknown> {
     const q = (k: string) => url.searchParams.get(k) ?? (typeof body[k] === "string" ? (body[k] as string) : undefined);
     const addr = (): NodeAddr => {
       const node = q("node");
@@ -229,6 +229,20 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         if (body.op === "remove") await removeEdge(dir, from, to);
         else await addEdge(dir, from, to);
         schedulePush();
+        return { ok: true };
+      }
+      case "/api/graph/context": {
+        const node = q("node")!;
+        const entry = q("entry")!;
+        if (body.op === "remove") await removeContext(dir, node, entry);
+        else await addContext(dir, node, entry);
+        schedulePush();
+        return { ok: true };
+      }
+      case "/api/sketch": {
+        const file = path.join(dir, "sketch.excalidraw.json");
+        if (method === "GET") return (await readJsonOrNull(file)) ?? { elements: [], sources: {} };
+        await fs.writeFile(file, JSON.stringify(body ?? {}, null, 2));
         return { ok: true };
       }
       case "/api/graph/node": {
