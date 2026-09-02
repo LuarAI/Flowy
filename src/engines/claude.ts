@@ -67,20 +67,21 @@ export class ClaudeEngine implements Engine {
     return out;
   }
 
-  private permFiles: { script: string; config: string } | null = null;
+  private permFiles: { script: string; settings: string } | null = null;
 
-  /** Write the permission-prompt MCP server + its config into the temp dir (once per process). */
-  private async ensurePermFiles(): Promise<{ promptFiles: { script: string; config: string } }> {
+  /** Write the permission-bridge hook + the settings file that attaches it (once per process). */
+  private async ensurePermFiles(): Promise<{ promptFiles: { script: string; settings: string } }> {
     if (this.permFiles) return { promptFiles: this.permFiles };
     const os = await import("node:os");
     const { PERM_SCRIPT_SOURCE } = await import("./permscript.js");
     const dir = path.join(os.tmpdir(), "flowy-perm");
     await fs.mkdir(dir, { recursive: true });
-    const script = path.join(dir, "perm-mcp.mjs");
+    const script = path.join(dir, "perm-hook.mjs");
     await fs.writeFile(script, PERM_SCRIPT_SOURCE, "utf8");
-    const config = path.join(dir, "perm-mcp-config.json");
-    await fs.writeFile(config, JSON.stringify({ mcpServers: { "flowy-perm": { command: process.execPath, args: [script] } } }), "utf8");
-    this.permFiles = { script, config };
+    const settings = path.join(dir, "perm-settings.json");
+    const command = `"${process.execPath}" "${script}"`;
+    await fs.writeFile(settings, JSON.stringify({ hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command, timeout: 660 }] }] } }), "utf8");
+    this.permFiles = { script, settings };
     return { promptFiles: this.permFiles };
   }
 
@@ -99,11 +100,12 @@ export class ClaudeEngine implements Engine {
       job.permissionPrompt ? "default" : typeof cfg.permission_mode === "string" ? cfg.permission_mode : "dontAsk",
       "--strict-mcp-config",
     ];
-    if (job.permissionPrompt && !shell) {
+    if (job.permissionPrompt) {
       const { promptFiles } = await this.ensurePermFiles();
-      args.push("--mcp-config", promptFiles.config, "--permission-prompt-tool", "mcp__flowy-perm__approve");
+      args.push("--settings", promptFiles.settings);
       env.FLOWY_PERM_URL = job.permissionPrompt.url;
       env.FLOWY_PERM_TOKEN = job.permissionPrompt.token;
+      env.FLOWY_AUTOALLOW = job.tools.join(",");
     }
     if (cfg.partial === true) args.push("--include-partial-messages");
     if (job.tools.length) args.push("--allowedTools", job.tools.join(","));

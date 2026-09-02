@@ -464,10 +464,12 @@ async function nativePick(kind: "file" | "folder"): Promise<string | null> {
   let cmd: string;
   let args: string[];
   if (process.platform === "win32") {
+    // Folder picking uses the MODERN file dialog in folder mode (address bar,
+    // paste-a-path, favorites) instead of the ancient FolderBrowserDialog tree.
     const ps =
       kind === "file"
         ? "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Title = 'Pick a context file for Flowy'; if ($f.ShowDialog() -eq 'OK') { [Console]::Out.Write($f.FileName) }"
-        : "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Pick a folder for Flowy'; if ($f.ShowDialog() -eq 'OK') { [Console]::Out.Write($f.SelectedPath) }";
+        : "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Title = 'Pick a folder for Flowy (open it, then click Select)'; $f.ValidateNames = $false; $f.CheckFileExists = $false; $f.CheckPathExists = $true; $f.FileName = 'Select this folder'; $f.Filter = 'Folder|*.none'; if ($f.ShowDialog() -eq 'OK') { [Console]::Out.Write((Split-Path -Parent $f.FileName)) }";
     cmd = "powershell";
     args = ["-STA", "-NoProfile", "-Command", ps];
   } else if (process.platform === "darwin") {
