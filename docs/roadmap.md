@@ -78,8 +78,14 @@ drag → positions persist. Anything else drawn or written is the user's
 sketch, saved to `sketch.excalidraw.json` beside the workflow. A selected
 card shows an "open →" chip that opens its paper.
 
-**Open:** foreach blocks can't be created/deleted from the canvas yet;
-undo of a canvas-mapped action doesn't undo the file edit (redraw instead).
+Deleting always wins and the workflow adapts (cascade): a deleted step
+takes checklists that read its list with it, `needs:`/`continues:`
+references are stripped, deleting a source pill detaches the file from
+every reader, and an emptied workflow is a valid blank canvas. Every
+canvas gesture is logged to the serve terminal and the browser console.
+
+**Open:** foreach blocks can't be *created* from the canvas yet; undo of a
+canvas-mapped action doesn't undo the file edit (git or redraw instead).
 
 ## Viewer backlog (agreed 2026-09, not yet built)
 

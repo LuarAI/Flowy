@@ -324,18 +324,16 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
           return false;
         };
         for (const flId of deleted) expectedFl.current.delete(flId);
+        console.debug("[flowy] deleted on canvas:", deleted);
 
+        // Deleting always wins; the workflow adapts. Checklists go first so a
+        // node that feeds one cascades cleanly on the server too.
+        const feDeletes = deleted.filter((d) => d.startsWith("fl-fe-")).map((d) => d.slice(6));
         const nodeDeletes = deleted.filter((d) => d.startsWith("fl-node-")).map((d) => d.slice(8));
+        const srcDeletes = deleted.filter((d) => d.startsWith("fl-src-")).map((d) => sources[parseInt(d.slice(7), 10)]).filter(Boolean);
         const edgeDeletes = deleted.filter((d) => d.startsWith("fl-edge-") && !isCascade(d));
         const ctxDeletes = deleted.filter((d) => d.startsWith("fl-ctx-") && !isCascade(d));
-        if (deleted.some((d) => d.startsWith("fl-fe-"))) {
-          errors.push("a checklist can't be deleted from the canvas yet — remove the foreach block in workflow.yaml");
-          mustRebuild = true;
-        }
-        if (deleted.some((d) => d.startsWith("fl-src-"))) {
-          errors.push("source pills follow the steps that read them — delete their dashed arrows to detach the file");
-          mustRebuild = true;
-        }
+
         for (const flId of edgeDeletes) {
           const [from, to] = flId.slice(8).split("--");
           await post("/api/graph/edge", { op: "remove", from, to }).catch((e) => {
@@ -353,18 +351,37 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
               mustRebuild = true;
             });
         }
-        if (nodeDeletes.length) {
+        const cardDeletes = [...feDeletes.map((id) => ({ id, what: `checklist "${id}"` })), ...nodeDeletes.map((id) => ({ id, what: `step "${id}"` }))];
+        if (cardDeletes.length) {
           const ok = window.confirm(
-            nodeDeletes.length === 1 ? `Delete the step "${nodeDeletes[0]}" and its file? (past runs stay on disk)` : `Delete ${nodeDeletes.length} steps (${nodeDeletes.join(", ")}) and their files?`,
+            `Delete ${cardDeletes.map((c) => c.what).join(", ")}?\n\nAnything that referenced them adapts (a checklist fed by a deleted step goes too). Files are edited; past runs stay on disk.`,
           );
           if (ok) {
-            for (const id of nodeDeletes) {
-              await post("/api/graph/node", { op: "remove", id }).catch((e) => {
-                errors.push(e.message);
-                mustRebuild = true;
-              });
+            for (const c of cardDeletes) {
+              await post<{ summary?: string }>("/api/graph/node", { op: "remove", id: c.id })
+                .then((r) => r.summary && console.debug("[flowy]", r.summary))
+                .catch((e) => {
+                  // cascades may have removed it already — that is success, not failure
+                  if (!/unknown node/.test(String(e.message))) {
+                    errors.push(e.message);
+                    mustRebuild = true;
+                  }
+                });
             }
           } else mustRebuild = true;
+        }
+        if (srcDeletes.length) {
+          for (const s of srcDeletes) {
+            const survivors = s.targets.filter((t) => !deletedCards.has(t.id));
+            if (!survivors.length) continue;
+            if (window.confirm(`Detach "${s.label}" from ${survivors.map((t) => t.id).join(", ")}?`)) {
+              for (const t of survivors)
+                await post("/api/graph/context", { op: "remove", node: t.id, entry: t.entry }).catch((e) => {
+                  errors.push(e.message);
+                });
+            }
+          }
+          mustRebuild = true; // pills regenerate from whatever still reads them
         }
       }
 

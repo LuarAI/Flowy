@@ -146,8 +146,10 @@ export async function compileWorkflow(dir: string, opts: CompileOptions = {}): P
       }
   }
 
-  if (!Array.isArray(raw.nodes) || raw.nodes.length === 0) {
-    issues.push({ file: rel(wfFile), message: "nodes: must be a non-empty list" });
+  // An empty workflow is valid: a blank canvas the user builds onto.
+  if (raw.nodes === undefined || raw.nodes === null) raw.nodes = [];
+  if (!Array.isArray(raw.nodes)) {
+    issues.push({ file: rel(wfFile), message: "nodes: must be a list" });
     throw new CompileError(issues);
   }
 

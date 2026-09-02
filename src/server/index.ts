@@ -228,6 +228,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         const to = q("to")!;
         if (body.op === "remove") await removeEdge(dir, from, to);
         else await addEdge(dir, from, to);
+        log(`canvas: ${body.op === "remove" ? "removed" : "drew"} edge ${from} → ${to}`);
         schedulePush();
         return { ok: true };
       }
@@ -236,6 +237,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         const entry = q("entry")!;
         if (body.op === "remove") await removeContext(dir, node, entry);
         else await addContext(dir, node, entry);
+        log(`canvas: ${body.op === "remove" ? "detached" : "attached"} ${entry} ${body.op === "remove" ? "from" : "to"} ${node}`);
         schedulePush();
         return { ok: true };
       }
@@ -246,8 +248,12 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         return { ok: true };
       }
       case "/api/graph/node": {
-        if (body.op === "remove") await removeNode(dir, q("id")!);
-        else if (body.op === "update") await updateNode(dir, q("id")!, { body: q("body") ?? undefined, fields: body.fields as Record<string, unknown> | undefined });
+        if (body.op === "remove") {
+          const summary = await removeNode(dir, q("id")!);
+          log(`canvas: ${summary}`);
+          schedulePush();
+          return { summary };
+        } else if (body.op === "update") await updateNode(dir, q("id")!, { body: q("body") ?? undefined, fields: body.fields as Record<string, unknown> | undefined });
         else {
           await addNode(dir, {
             id: q("id")!,

@@ -136,26 +136,80 @@ async function appendToNodesList(wfFile: string, id: string): Promise<void> {
   await writeText(wfFile, lines.join("\n"));
 }
 
-/** Delete a top-level node file, its list entry, and every reference in other nodes' needs. */
-export async function removeNode(dir: string, id: string): Promise<void> {
-  const m = await compileWorkflow(dir);
+/**
+ * Delete a vertex. Deleting always wins; the workflow adapts (cascade):
+ * - a foreach id removes the checklist block (its nested folder stays on disk)
+ * - a node that feeds a checklist takes that checklist block with it
+ * - `needs:` and `continues:` references to the deleted vertex are stripped
+ * - an emptied workflow is valid — a blank canvas
+ * Returns a human summary of everything that happened.
+ */
+export async function removeNode(dir: string, id: string): Promise<string> {
+  let m = await compileWorkflow(dir);
+  const did: string[] = [];
+  if (id in m.foreach) {
+    await removeForeachBlock(dir, m, id, did);
+    await compileWorkflow(dir);
+    return did.join("; ");
+  }
   const spec = m.nodes[id];
   if (!spec) throw new Error(`unknown node "${id}"`);
-  if (spec.foreach) throw new Error(`"${id}" is inside a foreach; edit the nested workflow directly`);
-  // Refuse BEFORE touching any file — a half-deleted node breaks the workflow.
+  if (spec.foreach) throw new Error(`"${id}" is inside the checklist "${spec.foreach}" — edit ${path.relative(dir, spec.workflowDir)}/workflow.yaml directly`);
+
+  // cascade: checklists that read this node's list go with it
   for (const fe of Object.values(m.foreach)) {
-    if (fe.source.node === id) throw new Error(`can't delete "${id}": the checklist "${fe.id}" reads its list (${fe.source.node}.${fe.source.key}). Repoint or remove that checklist first.`);
+    if (fe.source.node === id) await removeForeachBlock(dir, m, fe.id, did);
   }
+  m = await compileWorkflow(dir);
   for (const other of Object.values(m.nodes)) {
-    if (other.continues === id) throw new Error(`can't delete "${id}": "${other.id}" continues its session. Remove that first.`);
+    if (other.needs.includes(id)) await editNeeds(other.file, (n) => n.filter((x) => x !== id));
+    if (other.continues === id) {
+      await removeFrontmatterLine(other.file, "continues", id);
+      did.push(`"${other.id}" no longer continues its session`);
+    }
   }
-  for (const other of Object.values(m.nodes)) if (other.needs.includes(id)) await editNeeds(other.file, (n) => n.filter((x) => x !== id));
   const wfFile = path.join(dir, "workflow.yaml");
   const text = (await readText(wfFile)).replace(/\r\n/g, "\n");
   const lines = text.split("\n").filter((l) => !new RegExp(`^\\s+-\\s+${id}\\s*(#.*)?$`).test(l));
   await writeText(wfFile, lines.join("\n"));
   await fs.rm(spec.file, { force: true });
+  did.unshift(`deleted step "${id}"`);
   await compileWorkflow(dir);
+  return did.join("; ");
+}
+
+async function removeForeachBlock(dir: string, m: Awaited<ReturnType<typeof compileWorkflow>>, feId: string, did: string[]): Promise<void> {
+  const fe = m.foreach[feId];
+  if (!fe) return;
+  for (const other of Object.values(m.nodes)) {
+    if (!other.foreach && other.needs.includes(feId)) await editNeeds(other.file, (n) => n.filter((x) => x !== feId));
+  }
+  const wfFile = path.join(dir, "workflow.yaml");
+  const lines = (await readText(wfFile)).replace(/\r\n/g, "\n").split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const mFe = /^(\s*)-\s*foreach\s*:/.exec(lines[i]);
+    if (!mFe) continue;
+    let end = i + 1;
+    let isThis = false;
+    while (end < lines.length && (new RegExp(`^${mFe[1]}\\s+\\S`).test(lines[end]) || lines[end].trim() === "")) {
+      if (new RegExp(`^\\s+id\\s*:\\s*${feId}\\s*(#.*)?$`).test(lines[end])) isThis = true;
+      end++;
+    }
+    if (isThis) {
+      lines.splice(i, end - i);
+      await writeText(wfFile, lines.join("\n"));
+      did.push(`removed the checklist "${feId}" (its folder ${path.relative(dir, fe.workflowDir) || "."} stays on disk)`);
+      return;
+    }
+  }
+  throw new Error(`could not find the foreach block "${feId}" in workflow.yaml`);
+}
+
+/** Remove a `key: value` line from a node's frontmatter, format-preserving. */
+async function removeFrontmatterLine(file: string, key: string, value: string): Promise<void> {
+  const text = (await readText(file)).replace(/\r\n/g, "\n");
+  const lines = text.split("\n").filter((l, i) => !(i > 0 && new RegExp(`^${key}\\s*:\\s*${value}\\s*(#.*)?$`).test(l)));
+  await writeText(file, lines.join("\n"));
 }
 
 /** Replace a node's body (prompt) or a frontmatter field, keeping the rest. */
