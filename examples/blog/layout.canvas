@@ -17,23 +17,9 @@
       "y": 307,
       "width": 340,
       "height": 96
-    },
-    {
-      "id": "index",
-      "type": "text",
-      "text": "index\nagent",
-      "x": 479,
-      "y": 680,
-      "width": 220,
-      "height": 72
     }
   ],
   "edges": [
-    {
-      "id": "entry->index",
-      "fromNode": "entry",
-      "toNode": "index"
-    },
     {
       "id": "angles->entry",
       "fromNode": "angles",

@@ -75,28 +75,40 @@ export interface SourcePill {
   key: string;
   label: string;
   sub: string;
-  entry: string;
-  targets: string[];
+  /** Which canvas vertex (node or foreach id) reads it, with the exact entry string that vertex's file uses. */
+  targets: Array<{ id: string; entry: string }>;
 }
 
+/** One pill per FILE: `context/x.md` and `../context/x.md` are the same source. */
 export function collectSources(m: Manifest): SourcePill[] {
-  const map = new Map<string, Set<string>>();
+  const map = new Map<string, Map<string, string>>(); // normalized -> target id -> exact entry
   for (const n of Object.values(m.nodes)) {
     const target = n.foreach ?? n.id;
     for (const c of n.context ?? []) {
-      if (!map.has(c)) map.set(c, new Set());
-      map.get(c)!.add(target);
+      const norm = c.replace(/^(\.\.\/)+/, "");
+      if (!map.has(norm)) map.set(norm, new Map());
+      if (!map.get(norm)!.has(target)) map.get(norm)!.set(target, c);
     }
   }
-  return [...map.entries()].map(([entry, targets], i) => {
-    const clean = entry.replace(/\{\{\s*inputs\.([a-z_]+)\s*\}\}/g, "<$1>");
+  return [...map.entries()].map(([norm, targets]) => {
+    const clean = norm.replace(/\{\{\s*inputs\.([a-z_]+)\s*\}\}/g, "<$1>");
     const parts = clean.split("/").filter(Boolean);
     return {
-      key: `s${i}-${parts[parts.length - 1] ?? clean}`,
+      key: norm,
       label: parts[parts.length - 1] ?? clean,
       sub: parts.length > 1 ? parts.slice(0, -1).join("/") : "source",
-      entry,
-      targets: [...targets],
+      targets: [...targets.entries()].map(([id, entry]) => ({ id, entry })),
     };
   });
+}
+
+/** The entry string to write when attaching a pill to `targetId` (nested workflows need the ../ form). */
+export function entryFor(pill: SourcePill, targetId: string, m: Manifest): string {
+  const existing = pill.targets.find((t) => t.id === targetId)?.entry;
+  if (existing) return existing;
+  const targetIsNested = Object.values(m.nodes).some((n) => (n.foreach ?? n.id) === targetId && n.foreach);
+  const nested = pill.targets.find((t) => t.entry.startsWith("../"))?.entry;
+  const top = pill.targets.find((t) => !t.entry.startsWith("../"))?.entry;
+  if (targetIsNested) return nested ?? `../${pill.key}`;
+  return top ?? pill.key;
 }

@@ -22,4 +22,3 @@ nodes:
     workflow: ./entry
     key: slug
     concurrency: 2
-  - index

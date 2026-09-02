@@ -3,13 +3,17 @@ id: angles
 title: Mine the notes for angles
 mode: agent
 context:
-  - context/topic-notes.md
   - context/voice.md
-tools: [Read, Write]
-outputs: [structured.json]
+tools:
+  - Read
+  - Write
+outputs:
+  - structured.json
 schema: schemas/angles.schema.json
 approve:
-  notes: { type: string, description: "Guidance for all entries; may be empty" }
+  notes:
+    type: string
+    description: Guidance for all entries; may be empty
 timeout: 10m
 ---
 

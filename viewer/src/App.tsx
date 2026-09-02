@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExCanvas, setFeIds, type OpenTarget } from "./ExCanvas";
+import { ExCanvas, type OpenTarget } from "./ExCanvas";
 import { Header } from "./Header";
 import { Paper, type PaperTarget } from "./Paper";
 import { get, post, type State } from "./client";
@@ -12,7 +12,7 @@ export function App() {
   const refresh = useCallback(async () => {
     try {
       const s = await get<State>("/api/state");
-      setFeIds(s.manifest);
+
       setState(s);
     } catch (e) {
       setError((e as Error).message);
@@ -29,7 +29,7 @@ export function App() {
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "state") {
-          setFeIds(msg.state.manifest);
+
           setState(msg.state);
         } else if (msg.type === "node" || msg.type === "running") void refresh();
         else if (msg.type === "error") setError(msg.message);
