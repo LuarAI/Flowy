@@ -384,9 +384,11 @@ async function loadNode(
 
   const needs = strList("needs", []);
   const context = strList("context", []);
-  const tools = strList("tools", ["Read", "Write"]);
+  // A chat is a working conversation: it gets real tools by default.
+  const tools = strList("tools", mode === "chat" ? ["Read", "Write", "Edit", "Bash", "Glob", "Grep"] : ["Read", "Write"]);
   const outputs = strList("outputs", []);
-  if (outputs.length === 0) push("outputs", "outputs: must declare at least one file");
+  // Chats may be open-ended (no declared outputs); every other mode must produce files.
+  if (outputs.length === 0 && mode !== "chat") push("outputs", "outputs: must declare at least one file");
   for (const o of outputs) if (path.isAbsolute(o) || o.startsWith("..")) push("outputs", `output "${o}" must be relative to out/`);
   const before = strList("before", []);
   for (const b of before) if (!b.trim()) push("before", "before: commands must be non-empty strings");
@@ -455,7 +457,7 @@ async function loadNode(
     if (!(await exists(abs))) push("context", `context path not found: ${c}`);
   }
 
-  if ((mode === "agent" || mode === "chat") && !fm.body.trim()) issues.push({ file: f, line: fm.bodyLine, message: "agent/chat nodes need a prompt body" });
+  if (mode === "agent" && !fm.body.trim()) issues.push({ file: f, line: fm.bodyLine, message: "agent nodes need a prompt body" });
 
   return {
     id,

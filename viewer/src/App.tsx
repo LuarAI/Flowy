@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExCanvas, type OpenTarget } from "./ExCanvas";
+import { FlowCanvas, type OpenTarget } from "./FlowCanvas";
 import { Header } from "./Header";
 import { Paper, type PaperTarget } from "./Paper";
 import { get, post, type State } from "./client";
@@ -12,7 +12,6 @@ export function App() {
   const refresh = useCallback(async () => {
     try {
       const s = await get<State>("/api/state");
-
       setState(s);
     } catch (e) {
       setError((e as Error).message);
@@ -28,10 +27,9 @@ export function App() {
       ws = new WebSocket(`${proto}://${location.host}/ws`);
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
-        if (msg.type === "state") {
-
-          setState(msg.state);
-        } else if (msg.type === "node" || msg.type === "running") void refresh();
+        if (msg.type === "state") setState(msg.state);
+        else if (msg.type === "chat") window.dispatchEvent(new CustomEvent("flowy:chat-event", { detail: msg }));
+        else if (msg.type === "node" || msg.type === "running") void refresh();
         else if (msg.type === "error") setError(msg.message);
       };
       ws.onclose = () => {
@@ -88,7 +86,7 @@ export function App() {
         </div>
       )}
       <div className="canvas-wrap">
-        <ExCanvas state={state} onOpen={open} onError={setError} />
+        <FlowCanvas state={state} onOpen={open} onError={setError} act={act} />
       </div>
       {paper && <Paper state={state} target={paper} onOpen={setPaper} onClose={() => setPaper(null)} act={act} />}
     </div>

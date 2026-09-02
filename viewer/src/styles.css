@@ -522,3 +522,31 @@ label > span {
   color: var(--ink);
   border-bottom-style: solid;
 }
+
+/* react-flow */
+.react-flow__attribution { display: none; }
+.react-flow__edge-path { stroke: var(--ink); stroke-width: 1.8; }
+.react-flow__edge.running .react-flow__edge-path { stroke-dasharray: 7 6; animation: dashmove 1.2s linear infinite; }
+@keyframes dashmove { to { stroke-dashoffset: -13; } }
+.react-flow__edge-text { font-family: var(--body); font-size: 11px; fill: var(--muted); }
+.react-flow__edge-textbg { fill: var(--paper); }
+.react-flow__handle { width: 9px; height: 9px; background: var(--paper); border: 1.5px solid var(--muted); }
+.react-flow__controls { box-shadow: none; border: 2px solid var(--ink); border-radius: 10px 4px 12px 5px / 5px 12px 4px 10px; overflow: hidden; }
+.react-flow__controls-button { background: var(--card); border-bottom: 1.5px dashed var(--dash); fill: var(--ink); }
+.react-flow__controls-button:hover { background: #f3efe6; }
+
+/* the chat card */
+.chat-card { width: 360px; padding: 10px 14px 12px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; }
+.chat-card.yours { border-color: var(--accent); }
+.chat-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.bubbles { max-height: 300px; min-height: 40px; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; padding: 2px 2px 2px 0; cursor: default; }
+.bubble { max-width: 88%; padding: 6px 11px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.bubble.user { align-self: flex-end; background: #efe9dd; border: 1.5px solid var(--dash); border-radius: 12px 4px 12px 12px / 10px 12px 4px 12px; }
+.bubble.assistant { align-self: flex-start; background: var(--card); border: 1.5px solid var(--ink); border-radius: 4px 12px 12px 12px / 12px 10px 12px 4px; }
+.tool-line { align-self: flex-start; font-size: 11px; color: var(--muted); padding-left: 4px; }
+.chat-files { display: flex; gap: 6px; flex-wrap: wrap; }
+.chat-input { display: flex; gap: 6px; align-items: flex-end; }
+.chat-input textarea { border: 1.5px solid var(--dash); border-radius: 10px 4px 12px 5px / 5px 12px 4px 10px; padding: 6px 10px; font-size: 14px; min-height: 34px; max-height: 120px; }
+.chat-input textarea:focus { border-color: var(--ink); }
+.chat-actions { display: flex; gap: 12px; align-items: center; }
+.chat-actions .small { font-size: 13px; }

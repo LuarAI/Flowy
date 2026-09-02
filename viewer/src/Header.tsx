@@ -45,8 +45,8 @@ export function Header({ state, onRun, onStop, act }: Props) {
         <span className="logo">flowy</span>
         <span className="wf">/ {m?.name ?? "…"}</span>
       </div>
-      <button className="ghost" onClick={() => window.dispatchEvent(new CustomEvent("flowy:add-step"))} title="or just draw a rectangle on the canvas">
-        + step
+      <button className="ghost" onClick={() => window.dispatchEvent(new CustomEvent("flowy:add-step"))} title="a new conversation on the canvas">
+        + chat
       </button>
       <button className="ghost" onClick={() => pickContext("file")} title="pick a file; it lands as a pill — draw an arrow to give it to a step">
         + context

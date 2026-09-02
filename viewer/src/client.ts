@@ -40,6 +40,7 @@ export interface NodeView {
   approveFields: Record<string, { type: string; required?: boolean; description?: string }> | null;
   recipe: boolean;
   continues: string | null;
+  brief: boolean;
 }
 
 export interface ItemView {

@@ -258,6 +258,16 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         schedulePush();
         return { ok: true };
       }
+      case "/api/chat-message": {
+        const s = await store();
+        const a = addr();
+        const turn = await api.sendChatMessage(s, a, q("text") ?? "", opts.engines, {
+          emit: (ev) => broadcast({ type: "chat", addr: ev.addr, event: ev.event }),
+          log,
+        });
+        schedulePush();
+        return turn;
+      }
       case "/api/crystallize": {
         const s = await store();
         const r = await api.crystallize(s, addr(), opts.engines, log);
@@ -322,7 +332,9 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
             outputs: Array.isArray(body.outputs) ? (body.outputs as string[]) : undefined,
             run: q("runCmd") ?? undefined,
             body: q("body") ?? undefined,
+            continues: q("continues") ?? undefined,
           });
+          log(`canvas: added ${q("continues") ? `branch "${q("id")}" of "${q("continues")}"` : `"${q("id")}"`}`);
         }
         schedulePush();
         return { ok: true };

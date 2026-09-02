@@ -179,6 +179,7 @@ export interface TraceEvent {
   t: string;
   type:
     | "start"
+    | "user"
     | "text"
     | "thinking"
     | "tool_use"

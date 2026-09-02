@@ -68,6 +68,7 @@ export function placeholderView(m: Manifest, id: string): NodeView {
     approveFields: null,
     recipe: n?.recipe ?? false,
     continues: n?.continues ?? null,
+    brief: false,
   };
 }
 
@@ -100,6 +101,15 @@ export function collectSources(m: Manifest): SourcePill[] {
       targets: [...targets.entries()].map(([id, entry]) => ({ id, entry })),
     };
   });
+}
+
+/** A picked absolute path becomes workflow-relative when it lives inside the workflow. */
+export function relativeEntry(p: string, workflowDir: string): string {
+  const norm = (s: string) => s.replace(/\\/g, "/").replace(/\/+$/, "");
+  const np = norm(p);
+  const nd = norm(workflowDir);
+  if (np.toLowerCase().startsWith(nd.toLowerCase() + "/")) return np.slice(nd.length + 1);
+  return np;
 }
 
 /** The entry string to write when attaching a pill to `targetId` (nested workflows need the ../ form). */

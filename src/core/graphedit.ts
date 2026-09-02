@@ -96,6 +96,8 @@ export interface NewNode {
   outputs?: string[];
   run?: string;
   body?: string;
+  /** Branch: the new chat continues this node's conversation. */
+  continues?: string;
 }
 
 /** Create nodes/<id>.md and append the id to workflow.yaml's nodes list. */
@@ -104,15 +106,16 @@ export async function addNode(dir: string, n: NewNode): Promise<string> {
   const file = path.join(dir, "nodes", `${n.id}.md`);
   if (await exists(file)) throw new Error(`nodes/${n.id}.md already exists`);
   const data: Record<string, unknown> = { id: n.id, title: n.title ?? n.id, mode: n.mode };
+  if (n.continues) data.continues = n.continues;
   if (n.needs?.length) data.needs = n.needs;
-  data.outputs = n.outputs?.length ? n.outputs : [`${n.id}.md`];
+  if (n.mode === "chat") {
+    if (n.outputs?.length) data.outputs = n.outputs; // open-ended by default
+  } else {
+    data.outputs = n.outputs?.length ? n.outputs : [`${n.id}.md`];
+  }
   if (n.mode === "script") data.run = n.run ?? `echo TODO > "$env:FLOWY_OUT/${n.id}.md"`;
   if (n.mode === "wait") data.hint = `Drop ${data.outputs} into out/`;
-  const body =
-    n.body ??
-    (n.mode === "agent" || n.mode === "chat"
-      ? `Describe what this node does.\n\nRead the files under \`in/\` you need and write \`out/${(data.outputs as string[])[0]}\`.`
-      : `Describe what this step produces.`);
+  const body = n.body ?? (n.mode === "chat" ? "" : n.mode === "agent" ? `Describe what this node does.\n\nRead the files under \`in/\` you need and write \`out/${(data.outputs as string[])[0]}\`.` : `Describe what this step produces.`);
   await writeText(file, stringifyFrontmatter(data, body));
   await appendToNodesList(path.join(dir, "workflow.yaml"), n.id);
   await compileWorkflow(dir);

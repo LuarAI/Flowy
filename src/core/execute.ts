@@ -155,7 +155,10 @@ export async function executeNode(ctx: ExecContext, addr: NodeAddr, opts: ExecOp
     if (effectiveMode === "wait" || effectiveMode === "chat") {
       await trace.close();
       const missing = await missingOutputs(spec, vdir);
-      if (missing.length === 0) return await finish("done", { exit_code: 0 });
+      // An open-ended chat (no declared outputs) never auto-completes: the
+      // conversation is the point; `done` comes from the human or a recipe.
+      const openChat = effectiveMode === "chat" && spec.outputs.length === 0;
+      if (missing.length === 0 && !openChat) return await finish("done", { exit_code: 0 });
       return await finish("waiting");
     }
 
@@ -256,8 +259,8 @@ export async function executeNode(ctx: ExecContext, addr: NodeAddr, opts: ExecOp
   }
 }
 
-/** For wait/chat nodes: mark done when the outputs have appeared. */
-export async function settleWaiting(ctx: ExecContext, addr: NodeAddr): Promise<boolean> {
+/** For wait/chat nodes: mark done when the outputs have appeared (or on explicit `force` from the human). */
+export async function settleWaiting(ctx: ExecContext, addr: NodeAddr, opts: { force?: boolean } = {}): Promise<boolean> {
   const { store } = ctx;
   const spec = store.manifest.nodes[addr.node];
   const vdir = await store.currentDir(addr);
@@ -265,6 +268,8 @@ export async function settleWaiting(ctx: ExecContext, addr: NodeAddr): Promise<b
   const res = await store.readResult(vdir);
   if (!res || res.status !== "waiting") return false;
   if ((await missingOutputs(spec, vdir)).length) return false;
+  // Open-ended chats settle only when the human says so.
+  if (!opts.force && spec.mode === "chat" && spec.outputs.length === 0) return false;
   res.status = "done";
   res.ended = nowIso();
   res.duration_ms = Date.parse(res.ended) - Date.parse(res.started);

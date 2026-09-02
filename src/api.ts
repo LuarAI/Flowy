@@ -194,9 +194,99 @@ export async function markDone(store: RunStore, addr: NodeAddr): Promise<void> {
   if (!vdir) throw new Error(`"${addrLabel(addr)}" has not started`);
   const missing = await missingOutputs(spec, vdir);
   if (missing.length) throw new Error(`cannot mark done — missing outputs in ${path.join(vdir, "out")}: ${missing.join(", ")}`);
-  const ok = await settleWaiting({ store, engines: new EngineRegistry(), signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr);
+  const ok = await settleWaiting({ store, engines: new EngineRegistry(), signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr, { force: true });
   if (!ok) throw new Error(`"${addrLabel(addr)}" is not waiting`);
   await updateItemStates(store);
+}
+
+// ---- browser chat: one real engine turn per message --------------------------
+
+export interface ChatTurn {
+  text: string;
+  session: string | null;
+  costUsd: number | null;
+}
+
+/**
+ * One back-and-forth turn in a node's conversation, from the viewer. Each
+ * message is a real `claude -p --resume` turn in the node's isolated
+ * directory; the transcript accumulates in the node's trace.jsonl.
+ */
+export async function sendChatMessage(
+  store: RunStore,
+  addr: NodeAddr,
+  text: string,
+  engines = new EngineRegistry(),
+  opts: { emit?: (ev: { addr: NodeAddr; event: TraceEvent }) => void; env?: NodeJS.ProcessEnv; log?: Logger; signal?: AbortSignal } = {},
+): Promise<ChatTurn> {
+  const spec = store.manifest.nodes[addr.node];
+  if (!spec) throw new Error(`unknown node "${addr.node}"`);
+  if (spec.mode !== "chat" && spec.mode !== "agent") throw new Error(`"${addr.node}" is a ${spec.mode} node — only chats and agent steps hold conversations`);
+  if (!text.trim()) throw new Error("empty message");
+  let vdir = await store.currentDir(addr);
+  if (!vdir) {
+    const out = await executeNode({ store, engines, signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr, {});
+    vdir = store.versionDir(addr, out.version);
+  }
+  const result = await store.readResult(vdir);
+  const engine = engines.get(spec.engine ?? store.manifest.engine.default);
+  if (!engine.capabilities.includes("resume")) throw new Error(`engine "${engine.name}" cannot hold a conversation`);
+
+  let resume = result?.session_id ?? null;
+  let fork = false;
+  if (!resume && spec.continues) {
+    const parentSpec = store.manifest.nodes[spec.continues];
+    const parentAddr: NodeAddr = parentSpec?.foreach && addr.item ? { node: spec.continues, item: addr.item } : { node: spec.continues };
+    const pdir = await store.currentDir(parentAddr);
+    const pres = pdir ? await store.readResult(pdir) : null;
+    if (pres?.session_id) {
+      resume = pres.session_id;
+      fork = true;
+    }
+  }
+
+  const traceFile = path.join(vdir, "trace.jsonl");
+  const append = (e: TraceEvent) => {
+    void fs.appendFile(traceFile, JSON.stringify(e) + "\n").catch(() => {});
+    opts.emit?.({ addr, event: e });
+  };
+  append({ t: new Date().toISOString(), type: "user", engine: engine.name, payload: { text } });
+
+  const { engineConfigFor } = await import("./core/status.js");
+  const refs = await fs.readFile(path.join(vdir, "in", "_refs.json"), "utf8").catch(() => "[]");
+  const addDirs = [...new Set((JSON.parse(refs) as Array<{ path: string }>).map((r) => path.dirname(r.path)))];
+  const preamble = resume
+    ? ""
+    : `Working directory contract: your inputs are under ./in (read-only); anything you produce goes into ./out. Keep answers conversational and concise.\n\n${spec.body.trim() ? spec.body.trim() + "\n\n" : ""}`;
+  const er = await engine.run({
+    cwd: vdir,
+    prompt: preamble + text,
+    tools: spec.tools,
+    outputs: spec.outputs,
+    schema: null,
+    timeoutMs: 10 * 60_000,
+    resumeSession: resume,
+    forkSession: fork,
+    addDirs,
+    config: engineConfigFor(store, spec),
+    env: opts.env ?? process.env,
+    signal: opts.signal ?? new AbortController().signal,
+    onEvent: append,
+  });
+  if (result) {
+    result.session_id = er.sessionId ?? resume;
+    result.cost_usd = (result.cost_usd ?? 0) + (er.costUsd ?? 0);
+    if (er.tokens) {
+      result.tokens = result.tokens
+        ? { input: result.tokens.input + er.tokens.input, output: result.tokens.output + er.tokens.output, cache_read: result.tokens.cache_read + er.tokens.cache_read }
+        : er.tokens;
+    }
+    result.turns = (result.turns ?? 0) + 1;
+    await store.writeResult(vdir, result);
+  }
+  if (er.exitCode !== 0) throw new Error(er.error ?? `the turn failed (exit ${er.exitCode})`);
+  await settleWaiting({ store, engines, signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr);
+  return { text: er.text ?? "", session: er.sessionId ?? resume, costUsd: er.costUsd };
 }
 
 // ---- chat & recipes ----------------------------------------------------------
