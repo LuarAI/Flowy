@@ -575,3 +575,6 @@ label > span {
 .perm-ask .perm-text { font-size: 14px; margin-bottom: 6px; word-break: break-word; }
 .perm-ask .perm-buttons { display: flex; gap: 8px; }
 .perm-ask .perm-buttons button { font-size: 13px; padding: 3px 12px; }
+
+/* text inside chats is selectable (React Flow sets user-select: none on nodes) */
+.bubbles, .bubbles * , .paper, .paper * { user-select: text; -webkit-user-select: text; }

@@ -108,6 +108,7 @@ function ChatCard({ data }: NodeProps<CardNode>) {
   };
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState<string>(v.model ?? "");
+  const [stance, setStance] = useState<string>(v.permissions ?? "ask");
   const [perms, setPerms] = useState<Array<{ id: string; tool: string; detail: string }>>([]);
   const [branching, setBranching] = useState(false);
   const [branchName, setBranchName] = useState("");
@@ -168,7 +169,14 @@ function ChatCard({ data }: NodeProps<CardNode>) {
     setBusy(true);
     try {
       // Never clear what the human typed until the turn actually succeeded.
-      await post("/api/chat-message", { run: runId, node: addr.node, item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined, text, model: model || undefined });
+      await post("/api/chat-message", {
+        run: runId,
+        node: addr.node,
+        item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined,
+        text,
+        model: model || undefined,
+        permissions: stance !== "ask" ? stance : undefined,
+      });
       setDraft("");
     } catch (e) {
       ctx.onError(`your message is still in the box — ${(e as Error).message}`);
@@ -266,6 +274,20 @@ function ChatCard({ data }: NodeProps<CardNode>) {
           ⑂ branch
         </button>
         <span className="grow" />
+        <select
+          className="model-select"
+          value={stance}
+          onChange={(e) => {
+            const val = e.target.value;
+            setStance(val);
+            void post("/api/graph/node", { op: "update", id: addr.node, fields: { permissions: val === "ask" ? null : val } }).catch((err) => ctx.onError((err as Error).message));
+          }}
+          title="when this chat asks before using tools"
+        >
+          <option value="ask">ask: new things</option>
+          <option value="ask-all">ask: everything</option>
+          <option value="allow-all">ask: never</option>
+        </select>
         <select
           className="model-select"
           value={model}

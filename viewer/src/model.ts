@@ -70,6 +70,7 @@ export function placeholderView(m: Manifest, id: string): NodeView {
     continues: n?.continues ?? null,
     brief: false,
     model: null,
+    permissions: "ask",
   };
 }
 

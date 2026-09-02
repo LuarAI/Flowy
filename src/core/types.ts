@@ -46,6 +46,8 @@ export interface NodeSpec {
   recipe: boolean;
   /** Branch semantics: this node resumes (a fork of) the named node's session, inheriting its conversation. */
   continues: string | null;
+  /** Chat permission stance: "ask" = allowlist silent + others ask (default); "ask-all" = everything asks; "allow-all" = nothing asks. */
+  permissions: "ask" | "ask-all" | "allow-all";
   run: string | RunCommand | null;
   hint: string | null;
   /** The markdown body: the prompt (agent/chat) or a description (script/wait). */

@@ -160,13 +160,26 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
       const item = q("item");
       return item ? { node, item: { foreach: item.split("/")[0], id: item.split("/").slice(1).join("/") } } : { node };
     };
-    const store = async () => api.getStore(dir, q("run") ?? undefined);
+    const store = async (needNode?: string) => {
+      const s = await api.getStore(dir, q("run") ?? undefined);
+      // The run's snapshot may predate a node created on the canvas (a fresh
+      // branch, a new chat): adopt the live workflow so talking to it just works.
+      if (needNode && !(needNode in s.manifest.nodes) && !(needNode in s.manifest.foreach)) {
+        const live = await compileWorkflow(dir, { engines: opts.engines.names() }).catch(() => null);
+        if (live && (needNode in live.nodes || needNode in live.foreach)) {
+          s.manifest = live;
+          await fs.writeFile(path.join(s.run.dir, "manifest.json"), JSON.stringify(live, null, 2));
+          log(`run ${s.run.id} picked up the new node "${needNode}"`);
+        }
+      }
+      return s;
+    };
 
     switch (url.pathname) {
       case "/api/state":
         return state(q("run") ?? undefined);
       case "/api/node":
-        return api.nodeDetail(await store(), addr(), { version: q("version") ?? undefined });
+        return api.nodeDetail(await store(addr().node), addr(), { version: q("version") ?? undefined });
       case "/api/file": {
         const s = await store();
         const a = addr();
@@ -265,8 +278,9 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
       case "/api/chat-message": {
         const ensured = await api.ensureStore(dir, q("run") ?? undefined, opts.engines);
         if (ensured.created) log(`started run ${ensured.store.run.id} (first conversation)`);
-        const s = ensured.store;
+        let s = ensured.store;
         const a = addr();
+        if (!(a.node in s.manifest.nodes)) s = await store(a.node);
         const token = randomUUID();
         permTokens.set(token, a);
         try {
@@ -274,6 +288,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
             emit: (ev) => broadcast({ type: "chat", addr: ev.addr, event: ev.event }),
             log,
             model: q("model") ?? undefined,
+            permissions: (q("permissions") as "ask" | undefined) ?? undefined,
             permission: { url: `http://${host}:${opts.port}`, token },
           });
           schedulePush();
@@ -308,7 +323,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         return { ok: true };
       }
       case "/api/crystallize": {
-        const s = await store();
+        const s = await store(addr().node);
         const r = await api.crystallize(s, addr(), opts.engines, log);
         schedulePush();
         return { recipe: r.recipe };

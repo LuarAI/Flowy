@@ -23,6 +23,8 @@ export interface EngineJob {
    * (Flowy's server), which surfaces them in the chat card.
    */
   permissionPrompt?: { url: string; token: string };
+  /** Tools allowed without asking when the bridge is attached (["*"] = everything, [] = ask for all). Defaults to `tools`. */
+  autoAllow?: string[];
 }
 
 export interface EngineResult {

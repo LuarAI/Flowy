@@ -239,6 +239,8 @@ export async function sendChatMessage(
     model?: string;
     /** Route permission prompts (tools outside the allowlist) to the chat card. */
     permission?: { url: string; token: string };
+    /** Override the node's permission stance for this turn. */
+    permissions?: "ask" | "ask-all" | "allow-all";
   } = {},
 ): Promise<ChatTurn> {
   const spec = store.manifest.nodes[addr.node];
@@ -298,6 +300,10 @@ export async function sendChatMessage(
     signal: opts.signal ?? new AbortController().signal,
     onEvent: append,
     permissionPrompt: opts.permission,
+    autoAllow: (() => {
+      const stance = opts.permissions ?? spec.permissions;
+      return stance === "allow-all" ? ["*"] : stance === "ask-all" ? [] : spec.tools;
+    })(),
   });
   if (result) {
     result.session_id = er.sessionId ?? resume;

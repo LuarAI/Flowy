@@ -105,7 +105,7 @@ export class ClaudeEngine implements Engine {
       args.push("--settings", promptFiles.settings);
       env.FLOWY_PERM_URL = job.permissionPrompt.url;
       env.FLOWY_PERM_TOKEN = job.permissionPrompt.token;
-      env.FLOWY_AUTOALLOW = job.tools.join(",");
+      env.FLOWY_AUTOALLOW = (job.autoAllow ?? job.tools).join(",");
     }
     if (cfg.partial === true) args.push("--include-partial-messages");
     if (job.tools.length) args.push("--allowedTools", job.tools.join(","));

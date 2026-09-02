@@ -52,6 +52,7 @@ const NODE_KEYS = new Set([
   "effort",
   "recipe",
   "continues",
+  "permissions",
   "run",
   "hint",
 ]);
@@ -437,6 +438,8 @@ async function loadNode(
   const continues = d.continues === undefined || d.continues === null ? null : String(d.continues);
   if (continues && mode !== "agent" && mode !== "chat") push("continues", "continues applies only to agent and chat nodes");
   if (continues && !needs.includes(continues)) needs.push(continues); // a branch depends on its parent
+  const permissions = d.permissions === undefined || d.permissions === null ? "ask" : String(d.permissions);
+  if (!["ask", "ask-all", "allow-all"].includes(permissions)) push("permissions", 'permissions must be "ask", "ask-all" or "allow-all"');
 
   let run: NodeSpec["run"] = null;
   if (mode === "script") {
@@ -479,6 +482,7 @@ async function loadNode(
     effort,
     recipe,
     continues,
+    permissions: permissions as NodeSpec["permissions"],
     run,
     hint,
     body: fm.body,

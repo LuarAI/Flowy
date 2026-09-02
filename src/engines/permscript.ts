@@ -33,6 +33,7 @@ process.stdin.on("data", (d) => {
 });
 async function decide(req) {
   const tool = String(req.tool_name || "");
+  if (AUTO.has("*")) return answer("allow", "this chat allows everything");
   if (AUTO.has(tool)) return answer("allow", "in this chat's allowlist");
   if (!URL_BASE || !TOKEN) return answer("deny", "no permission channel");
   try {

@@ -42,6 +42,7 @@ export interface NodeView {
   continues: string | null;
   brief: boolean;
   model: string | null;
+  permissions: "ask" | "ask-all" | "allow-all";
 }
 
 export interface ItemView {
