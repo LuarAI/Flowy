@@ -69,6 +69,7 @@ export function placeholderView(m: Manifest, id: string): NodeView {
     recipe: n?.recipe ?? false,
     continues: n?.continues ?? null,
     brief: false,
+    model: null,
   };
 }
 

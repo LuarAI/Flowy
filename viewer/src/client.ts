@@ -41,6 +41,7 @@ export interface NodeView {
   recipe: boolean;
   continues: string | null;
   brief: boolean;
+  model: string | null;
 }
 
 export interface ItemView {

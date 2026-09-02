@@ -266,6 +266,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         const turn = await api.sendChatMessage(s, a, q("text") ?? "", opts.engines, {
           emit: (ev) => broadcast({ type: "chat", addr: ev.addr, event: ev.event }),
           log,
+          model: q("model") ?? undefined,
         });
         schedulePush();
         return turn;

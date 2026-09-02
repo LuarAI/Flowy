@@ -107,6 +107,7 @@ function ChatCard({ data }: NodeProps<CardNode>) {
     }
   };
   const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState<string>(v.model ?? "");
   const [branching, setBranching] = useState(false);
   const [branchName, setBranchName] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
@@ -144,7 +145,7 @@ function ChatCard({ data }: NodeProps<CardNode>) {
     setBusy(true);
     try {
       // Never clear what the human typed until the turn actually succeeded.
-      await post("/api/chat-message", { run: runId, node: addr.node, item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined, text });
+      await post("/api/chat-message", { run: runId, node: addr.node, item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined, text, model: model || undefined });
       setDraft("");
     } catch (e) {
       ctx.onError(`your message is still in the box — ${(e as Error).message}`);
@@ -225,6 +226,24 @@ function ChatCard({ data }: NodeProps<CardNode>) {
         <button className="ghost small" disabled={!v.result?.session_id} onClick={() => setBranching((b) => !b)} title="a new chat that remembers this whole conversation">
           ⑂ branch
         </button>
+        <span className="grow" />
+        <select
+          className="model-select"
+          value={["", "opus", "sonnet", "haiku"].includes(model) ? model : model}
+          onChange={(e) => {
+            const val = e.target.value;
+            setModel(val);
+            // persist into the node file so replays and recipes use it too
+            void post("/api/graph/node", { op: "update", id: addr.node, fields: { model: val || null } }).catch((err) => ctx.onError((err as Error).message));
+          }}
+          title="which model this chat talks to (applies to the next message)"
+        >
+          <option value="">model: default</option>
+          <option value="opus">opus</option>
+          <option value="sonnet">sonnet</option>
+          <option value="haiku">haiku</option>
+          {model && !["", "opus", "sonnet", "haiku"].includes(model) && <option value={model}>{model}</option>}
+        </select>
       </div>
       {branching && (
         <div className="chat-input nodrag">

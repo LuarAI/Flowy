@@ -114,6 +114,7 @@ export interface NodeView {
   continues: string | null;
   /** Whether the node file carries a body (a brief/recipe) — the text itself stays in the file. */
   brief: boolean;
+  model: string | null;
 }
 
 /** Derive a node's display/scheduling status (SPEC §6.4, §13). */
@@ -146,6 +147,7 @@ export async function nodeView(store: RunStore, addr: NodeAddr, opts: { checkSta
     recipe: spec.recipe,
     continues: spec.continues,
     brief: spec.body.trim().length > 0,
+    model: spec.model,
   };
   if (opts.itemState === "skipped" || opts.itemState === "orphaned") return { ...base, status: opts.itemState };
   if (!vdir || !result) return base;

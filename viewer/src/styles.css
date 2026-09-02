@@ -566,3 +566,6 @@ label > span {
 .md hr { border: none; border-top: 1.5px dashed var(--dash); margin: 8px 0; }
 .md strong { font-weight: 700; }
 .preview-md { max-height: 440px; overflow-y: auto; font-size: 15px; line-height: 1.5; }
+
+.model-select { width: auto; font-size: 12px; color: var(--muted); border-bottom: 1.5px dashed var(--dash); padding: 1px 2px; cursor: pointer; }
+.model-select:hover { color: var(--ink); }

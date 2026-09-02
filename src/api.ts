@@ -231,7 +231,7 @@ export async function sendChatMessage(
   addr: NodeAddr,
   text: string,
   engines = new EngineRegistry(),
-  opts: { emit?: (ev: { addr: NodeAddr; event: TraceEvent }) => void; env?: NodeJS.ProcessEnv; log?: Logger; signal?: AbortSignal } = {},
+  opts: { emit?: (ev: { addr: NodeAddr; event: TraceEvent }) => void; env?: NodeJS.ProcessEnv; log?: Logger; signal?: AbortSignal; model?: string } = {},
 ): Promise<ChatTurn> {
   const spec = store.manifest.nodes[addr.node];
   if (!spec) throw new Error(`unknown node "${addr.node}"`);
@@ -285,7 +285,7 @@ export async function sendChatMessage(
     resumeSession: resume,
     forkSession: fork,
     addDirs,
-    config: engineConfigFor(store, spec),
+    config: { ...engineConfigFor(store, spec), ...(opts.model ? { model: opts.model } : {}) },
     env: opts.env ?? process.env,
     signal: opts.signal ?? new AbortController().signal,
     onEvent: append,
