@@ -213,7 +213,10 @@ export async function runOverview(store: RunStore, opts: { checkStale?: boolean 
     if (v.status === "done" || v.status === "skipped") done++;
     if (v.result?.cost_usd) cost += v.result.cost_usd;
     if (v.result?.duration_ms) duration += v.result.duration_ms;
-    if (v.status === "gate" || v.status === "waiting") pending.push({ addr: v.addr, status: v.status, hint: v.hint });
+    // An open-ended conversation (chat with no declared outputs, no recipe)
+    // is not a pending demand on the human — it's just a chat sitting there.
+    const openChat = v.mode === "chat" && v.outputs.length === 0 && !v.recipe;
+    if ((v.status === "gate" || v.status === "waiting") && !openChat) pending.push({ addr: v.addr, status: v.status, hint: v.hint });
   };
   for (const id of m.top) {
     if (id in m.foreach) {

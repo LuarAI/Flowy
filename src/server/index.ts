@@ -312,6 +312,54 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         schedulePush();
         return { undone: label };
       }
+      case "/api/preview": {
+        let abs: string;
+        if (q("node")) {
+          // a run output: run/node/item/file address, like /api/file
+          const s = await store();
+          const a = addr();
+          const version = q("version") ?? (await s.current(a));
+          if (!version) throw new Error("no version");
+          const base = path.join(s.versionDir(a, version), "out");
+          abs = path.resolve(base, q("file") ?? "");
+          if (!abs.startsWith(base)) throw new Error("path outside out/");
+        } else {
+          const raw = q("path") ?? "";
+          if (!raw) throw new Error("path is required");
+          abs = path.isAbsolute(raw) ? raw : path.resolve(dir, raw);
+        }
+        const st = await fs.stat(abs).catch(() => null);
+        if (!st) throw new Error(`not found: ${abs}`);
+        if (st.isDirectory()) {
+          const entries = await fs.readdir(abs);
+          return { dir: true, path: abs, entries: entries.slice(0, 200) };
+        }
+        if (st.size > 512 * 1024 || /\.(png|jpe?g|gif|mp4|mp3|m4a|wav|zip|exe|pdf|webp)$/i.test(abs)) return { binary: true, path: abs, bytes: st.size };
+        return { path: abs, text: await fs.readFile(abs, "utf8") };
+      }
+      case "/api/reveal": {
+        const raw = q("path") ?? "";
+        if (!raw) throw new Error("path is required");
+        const abs = path.isAbsolute(raw) ? raw : path.resolve(dir, raw);
+        const { spawn } = await import("node:child_process");
+        if (process.platform === "win32") spawn("explorer.exe", [`/select,${abs}`], { detached: true, stdio: "ignore" }).unref();
+        else if (process.platform === "darwin") spawn("open", ["-R", abs], { detached: true, stdio: "ignore" }).unref();
+        else spawn("xdg-open", [path.dirname(abs)], { detached: true, stdio: "ignore" }).unref();
+        return { ok: true };
+      }
+      case "/api/context-note": {
+        const name = (q("name") ?? "note").trim();
+        const text = q("text") ?? "";
+        if (!text.trim()) throw new Error("write something first");
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "note";
+        let rel = `context/${slug}.md`;
+        let n = 2;
+        while (await exists(path.join(dir, rel))) rel = `context/${slug}-${n++}.md`;
+        await fs.mkdir(path.join(dir, "context"), { recursive: true });
+        await fs.writeFile(path.join(dir, rel), text.endsWith("\n") ? text : text + "\n", "utf8");
+        log(`canvas: wrote ${rel}`);
+        return { path: path.join(dir, rel), rel };
+      }
       case "/api/pick": {
         const kind = q("kind") === "folder" ? "folder" : "file";
         const picked = await nativePick(kind);

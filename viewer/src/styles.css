@@ -550,3 +550,19 @@ label > span {
 .chat-input textarea:focus { border-color: var(--ink); }
 .chat-actions { display: flex; gap: 12px; align-items: center; }
 .chat-actions .small { font-size: 13px; }
+
+/* header context menu */
+.menu { position: absolute; top: 100%; left: 0; z-index: 30; background: var(--card); border: 2px solid var(--ink); border-radius: 10px 4px 12px 5px / 5px 12px 4px 10px; padding: 6px 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; box-shadow: var(--shadow); white-space: nowrap; }
+
+/* markdown inside bubbles and previews */
+.md p { margin: 0 0 6px; }
+.md p:last-child { margin-bottom: 0; }
+.md h4, .md h5, .md h6 { font-family: var(--hand); margin: 8px 0 4px; font-size: 15px; }
+.md ul, .md ol { margin: 4px 0 6px; padding-left: 20px; }
+.md li { margin: 2px 0; }
+.md code { background: #efe9dd; border-radius: 4px; padding: 0 4px; font-size: 13px; }
+.md pre { background: #f3efe6; border: 1.5px solid var(--dash); border-radius: 8px; padding: 8px 10px; overflow-x: auto; margin: 6px 0; max-height: 240px; }
+.md pre code { background: transparent; padding: 0; }
+.md hr { border: none; border-top: 1.5px dashed var(--dash); margin: 8px 0; }
+.md strong { font-weight: 700; }
+.preview-md { max-height: 440px; overflow-y: auto; font-size: 15px; line-height: 1.5; }

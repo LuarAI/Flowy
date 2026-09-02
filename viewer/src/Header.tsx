@@ -12,6 +12,10 @@ interface Props {
 export function Header({ state, onRun, onStop, act }: Props) {
   const [showNew, setShowNew] = useState(false);
   const [inputs, setInputs] = useState<Record<string, string>>({});
+  const [ctxMenu, setCtxMenu] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteName, setNoteName] = useState("");
+  const [noteText, setNoteText] = useState("");
   const m = state.manifest;
   const ov = state.overview;
   const running = !!state.running;
@@ -48,12 +52,44 @@ export function Header({ state, onRun, onStop, act }: Props) {
       <button className="ghost" onClick={() => window.dispatchEvent(new CustomEvent("flowy:add-step"))} title="a new conversation on the canvas">
         + chat
       </button>
-      <button className="ghost" onClick={() => pickContext("file")} title="pick a file; it lands as a pill — draw an arrow to give it to a step">
-        + context
-      </button>
-      <button className="ghost" onClick={() => pickContext("folder")} title="pick a whole folder as context (steps read everything in it)">
-        + folder
-      </button>
+      <div style={{ position: "relative" }}>
+        <button className="ghost" onClick={() => setCtxMenu((v) => !v)} title="give the chats something to read">
+          + context
+        </button>
+        {ctxMenu && (
+          <div className="menu" onMouseLeave={() => setCtxMenu(false)}>
+            <button
+              className="ghost"
+              onClick={() => {
+                setCtxMenu(false);
+                void pickContext("file");
+              }}
+            >
+              pick a file
+            </button>
+            <button
+              className="ghost"
+              onClick={() => {
+                setCtxMenu(false);
+                void pickContext("folder");
+              }}
+            >
+              pick a folder
+            </button>
+            <button
+              className="ghost"
+              onClick={() => {
+                setCtxMenu(false);
+                setNoteOpen(true);
+                setNoteName("");
+                setNoteText("");
+              }}
+            >
+              write a note
+            </button>
+          </div>
+        )}
+      </div>
       {state.undo > 0 && !running && (
         <button className="ghost" onClick={() => act(() => post("/api/graph/undo"))} title="undo the last canvas edit to the files">
           <Redo size={13} color="#8a857c" /> undo edit
@@ -84,6 +120,43 @@ export function Header({ state, onRun, onStop, act }: Props) {
         </>
       )}
 
+      {noteOpen && (
+        <div className="overlay" onClick={() => setNoteOpen(false)}>
+          <div className="paper" style={{ width: 480, marginTop: 40 }} onClick={(e) => e.stopPropagation()}>
+            <div className="close" onClick={() => setNoteOpen(false)}>
+              <X />
+            </div>
+            <h1>write a note</h1>
+            <div className="sub">saved as a markdown file in the workflow's context folder — then wire it to a chat</div>
+            <label>
+              <span>name</span>
+              <input autoFocus value={noteName} onChange={(e) => setNoteName(e.target.value)} placeholder="e.g. tone rules" />
+            </label>
+            <label>
+              <span>the note</span>
+              <textarea rows={8} value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="whatever the chats should know…" />
+            </label>
+            <div className="actions">
+              <button
+                className="primary"
+                disabled={!noteText.trim()}
+                onClick={() =>
+                  act(async () => {
+                    const r = await post<{ path: string }>("/api/context-note", { name: noteName || "note", text: noteText });
+                    window.dispatchEvent(new CustomEvent("flowy:add-source", { detail: { path: r.path } }));
+                    setNoteOpen(false);
+                  })
+                }
+              >
+                save it
+              </button>
+              <button className="ghost" onClick={() => setNoteOpen(false)}>
+                never mind
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showNew && m && (
         <div className="overlay" onClick={() => setShowNew(false)}>
           <div className="paper" style={{ width: 460, marginTop: 40 }} onClick={(e) => e.stopPropagation()}>

@@ -318,7 +318,8 @@ async function pendingHuman(store: RunStore) {
   const out: Array<{ addr: NodeAddr; status: NodeStatus; hint: string | null }> = [];
   const check = async (addr: NodeAddr) => {
     const v = await nodeView(store, addr, { checkStale: false });
-    if (v.status === "gate" || v.status === "waiting") out.push({ addr, status: v.status, hint: v.hint });
+    const openChat = v.mode === "chat" && m.nodes[addr.node].outputs.length === 0 && !v.recipe;
+    if ((v.status === "gate" || v.status === "waiting") && !openChat) out.push({ addr, status: v.status, hint: v.hint });
   };
   for (const id of m.top) {
     if (id in m.foreach) {

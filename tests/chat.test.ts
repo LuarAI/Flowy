@@ -14,10 +14,9 @@ describe("canvas chat: one engine turn per message", () => {
   it("open chats compile without outputs/body, never auto-complete, and accumulate a transcript", async () => {
     const dir = await makeWorkflow(files);
     const { store, summary } = await runWf(dir);
-    // the root chat waits for the human; the branch waits for its parent
-    // (but can still be talked to directly — see the fork test below)
+    // open conversations are not pending demands on the human — nothing "needs you"
     expect(summary.status).toBe("idle");
-    expect(summary.pending.map((p) => p.addr.node)).toEqual(["talk"]);
+    expect(summary.pending).toEqual([]);
 
     const t1 = await api.sendChatMessage(store, { node: "talk" }, "hello there", engines);
     expect(t1.text).toContain("mock answer");

@@ -18,6 +18,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { addrParams, get, post, type ForeachView, type NodeAddr, type NodeView, type State, type TraceEvent } from "./client";
+import { renderMarkdown } from "./markdown";
 import { collectSources, entryFor, humanMode, humanStatus, itemWorst, placeholderView, relativeEntry, NEEDS_YOU, WRONG, type SourcePill } from "./model";
 import { Box, Check, FileIcon, Folder, Pencil, Play } from "./icons";
 
@@ -64,9 +65,20 @@ function traceToMessages(trace: TraceEvent[]): ChatMsg[] {
     const p = e.payload as Record<string, unknown> | string | null;
     if (e.type === "user" && p && typeof p === "object" && typeof p.text === "string") out.push({ role: "user", text: p.text });
     else if (e.type === "text" && p && typeof p === "object" && typeof (p as Record<string, unknown>).text === "string") out.push({ role: "assistant", text: String((p as Record<string, unknown>).text) });
-    else if (e.type === "tool_use" && p && typeof p === "object" && typeof (p as Record<string, unknown>).name === "string") out.push({ role: "tool", text: String((p as Record<string, unknown>).name) });
+    else if (e.type === "tool_use" && p && typeof p === "object" && typeof (p as Record<string, unknown>).name === "string") {
+      // say WHAT it touched, not just the tool name
+      const input = ((p as Record<string, unknown>).input ?? {}) as Record<string, unknown>;
+      let detail = "";
+      if (typeof input.command === "string") detail = input.command.slice(0, 64);
+      else if (typeof input.description === "string") detail = input.description.slice(0, 64);
+      else {
+        const pth = input.file_path ?? input.path ?? input.pattern ?? input.url ?? input.query;
+        if (typeof pth === "string") detail = pth.replace(/\\/g, "/").split("/").pop()!.slice(0, 64);
+      }
+      out.push({ role: "tool", text: `${String((p as Record<string, unknown>).name)}${detail ? ` · ${detail}` : ""}` });
+    }
   }
-  // merge consecutive tool lines
+  // merge consecutive identical tool lines
   return out.filter((m, i) => !(m.role === "tool" && out[i - 1]?.role === "tool" && out[i - 1].text === m.text));
 }
 
@@ -157,7 +169,6 @@ function ChatCard({ data }: NodeProps<CardNode>) {
     });
   };
 
-  const files = v.result ? Object.keys(v.result.outputs).filter((f) => !f.startsWith("_")) : [];
   const yours = NEEDS_YOU.includes(v.status) || WRONG.includes(v.status);
 
   return (
@@ -180,6 +191,8 @@ function ChatCard({ data }: NodeProps<CardNode>) {
             <div key={i} className="tool-line">
               ⚙ {m.text}
             </div>
+          ) : m.role === "assistant" ? (
+            <div key={i} className="bubble assistant md" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
           ) : (
             <div key={i} className={`bubble ${m.role}`}>
               {m.text}
@@ -188,21 +201,6 @@ function ChatCard({ data }: NodeProps<CardNode>) {
         )}
         {busy && <div className="tool-line">thinking…</div>}
       </div>
-      {files.length > 0 && (
-        <div className="chat-files nodrag">
-          {files.slice(0, 4).map((f) => (
-            <a
-              key={f}
-              className="chip"
-              href={`/api/file?${new URLSearchParams({ run: runId ?? "", node: addr.node, ...(addr.item ? { item: `${addr.item.foreach}/${addr.item.id}` } : {}), path: f })}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <FileIcon /> {f.split("/").pop()}
-            </a>
-          ))}
-        </div>
-      )}
       <div className="chat-input nodrag nowheel">
         <textarea
           rows={1}
@@ -267,16 +265,17 @@ function SimpleCard({ data }: NodeProps<CardNode>) {
   );
 }
 
-type PillNode = Node<{ label: string; sub: string; unattached?: boolean }, "pill">;
+type PillNode = Node<{ label: string; sub: string; unattached?: boolean; out?: boolean; onPreview?: () => void }, "pill">;
 
 function PillCard({ data }: NodeProps<PillNode>) {
   return (
-    <div className="card wob2 source-card" style={data.unattached ? { borderStyle: "dashed" } : undefined}>
+    <div className="card wob2 source-card" style={{ cursor: data.onPreview ? "pointer" : undefined, ...(data.unattached ? { borderStyle: "dashed" as const } : {}) }} onClick={() => data.onPreview?.()}>
+      {data.out && <Handle type="target" position={Position.Left} />}
       <div className="name">
-        <Folder /> <span>{data.label}</span>
+        {data.out ? <FileIcon size={15} /> : <Folder />} <span>{data.label}</span>
       </div>
       <div className="sub">{data.unattached ? "draw an arrow to a chat" : data.sub}</div>
-      <Handle type="source" position={Position.Right} />
+      {!data.out && <Handle type="source" position={Position.Right} />}
     </div>
   );
 }
@@ -322,6 +321,7 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
   const [refreshKey, setRefreshKey] = useState(0);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
+  const [preview, setPreview] = useState<{ title: string; params: Record<string, string | undefined> } | null>(null);
   const rf = useReactFlow();
   const sketchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -371,7 +371,14 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
       const first = ns.find((n) => s.targets.some((t) => t.id === n.id));
       const saved = sketchRef.current.sources[s.key];
       const p = saved ?? { x: (first?.position.x ?? 400) - 300, y: (first?.position.y ?? 40) + i * 96 };
-      ns.push({ id: `src-${i}`, type: "pill", position: p, data: { label: s.label, sub: s.sub } });
+      const entry = s.targets[0]?.entry ?? s.key;
+      const previewable = !entry.includes("{{");
+      ns.push({
+        id: `src-${i}`,
+        type: "pill",
+        position: p,
+        data: { label: s.label, sub: s.sub, onPreview: previewable ? () => setPreview({ title: s.label, params: { path: entry } }) : () => onError("this path is filled in by a run input") },
+      });
       for (const t of s.targets) {
         es.push({
           id: `c-${i}--${t.id}`,
@@ -385,8 +392,43 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
 
     (sketchRef.current.unattached ?? []).forEach((p2, i) => {
       const saved = sketchRef.current.sources[`u:${p2}`];
-      ns.push({ id: `usrc-${i}`, type: "pill", position: saved ?? { x: 60, y: 60 + i * 96 }, data: { label: p2.split(/[\\/]/).pop() ?? p2, sub: "", unattached: true } });
+      ns.push({
+        id: `usrc-${i}`,
+        type: "pill",
+        position: saved ?? { x: 60, y: 60 + i * 96 },
+        data: { label: p2.split(/[\\/]/).pop() ?? p2, sub: "", unattached: true, onPreview: () => setPreview({ title: p2.split(/[\\/]/).pop() ?? p2, params: { path: p2 } }) },
+      });
     });
+
+    // outputs become pills, with the arrow coming FROM the chat that made them
+    for (const n of [...ns]) {
+      if (n.type !== "chat" && n.type !== "simple") continue;
+      const view = (n.data as { view?: NodeView }).view;
+      if (!view?.result) continue;
+      const files = Object.keys(view.result.outputs).filter((f) => !f.startsWith("_"));
+      files.slice(0, 6).forEach((f, j) => {
+        const skey = `o:${n.id}/${f}`;
+        const saved = sketchRef.current.sources[skey];
+        const pid = `out-${n.id}--${j}`;
+        ns.push({
+          id: pid,
+          type: "pill",
+          position: saved ?? { x: n.position.x + 440, y: n.position.y + j * 84 },
+          data: {
+            label: f.split("/").pop() ?? f,
+            sub: "result",
+            out: true,
+            sketchKey: skey,
+            onPreview: () =>
+              setPreview({
+                title: f.split("/").pop() ?? f,
+                params: { run: ov?.run.id, node: n.id, file: f, item: undefined },
+              }),
+          } as PillNode["data"] & { sketchKey: string },
+        });
+        es.push({ id: `oe-${n.id}--${j}`, source: n.id, target: pid, style: { opacity: 0.55 }, markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: "#8a857c" } });
+      });
+    }
 
     const topSet = new Set(m.top);
     const seen = new Set<string>();
@@ -429,6 +471,12 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
           sketchRef.current.sources[`u:${p}`] = node.position;
           saveSketch();
         }
+      } else if (node.id.startsWith("out-")) {
+        const skey = (node.data as { sketchKey?: string }).sketchKey;
+        if (skey) {
+          sketchRef.current.sources[skey] = node.position;
+          saveSketch();
+        }
       } else void post("/api/layout", { positions: { [node.id]: node.position } }).catch((e) => onError(e.message));
     },
     [sources, saveSketch, onError],
@@ -457,7 +505,7 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
 
   const onNodesDelete = useCallback(
     (deleted: Node[]) => {
-      const cards = deleted.filter((n) => !n.id.startsWith("src-") && !n.id.startsWith("usrc-"));
+      const cards = deleted.filter((n) => !n.id.startsWith("src-") && !n.id.startsWith("usrc-") && !n.id.startsWith("out-"));
       const usrcs = deleted.filter((n) => n.id.startsWith("usrc-"));
       const srcs = deleted.filter((n) => n.id.startsWith("src-"));
       void (async () => {
@@ -566,7 +614,8 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
         <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} color="#ddd9d0" />
         <Controls showInteractive={false} />
       </ReactFlow>
-      <div className="canvas-hint">arrows connect · Delete removes · drag anything</div>
+      <div className="canvas-hint">arrows connect · Delete removes · drag anything · click a pill to peek</div>
+      {preview && <PreviewPaper title={preview.title} params={preview.params} onClose={() => setPreview(null)} onError={onError} />}
       {naming && (
         <div className="overlay" onClick={() => setNaming(false)}>
           <div className="paper" style={{ width: 400, marginTop: 60 }} onClick={(e) => e.stopPropagation()}>
@@ -588,6 +637,45 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
         </div>
       )}
     </>
+  );
+}
+
+function PreviewPaper({ title, params, onClose, onError }: { title: string; params: Record<string, string | undefined>; onClose: () => void; onError: (m: string) => void }) {
+  const [data, setData] = useState<{ text?: string; path?: string; binary?: boolean; bytes?: number; dir?: boolean; entries?: string[] } | null>(null);
+  useEffect(() => {
+    post<typeof data>("/api/preview", params as Record<string, unknown>)
+      .then(setData)
+      .catch((e) => {
+        onError((e as Error).message);
+        onClose();
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const isMd = /\.(md|markdown)$/i.test(title);
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="paper" onClick={(e) => e.stopPropagation()}>
+        <h1>{title}</h1>
+        {data?.path && <div className="pathline">{data.path}</div>}
+        {!data && <div className="muted small">…</div>}
+        {data?.dir && (
+          <pre style={{ maxHeight: 380 }}>{(data.entries ?? []).join("\n")}</pre>
+        )}
+        {data?.binary && <div className="muted">binary file · {Math.round((data.bytes ?? 0) / 1024)} KB</div>}
+        {data?.text !== undefined &&
+          (isMd ? <div className="md preview-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(data.text ?? "") }} /> : <pre style={{ maxHeight: 420 }}>{data.text}</pre>)}
+        <div className="actions">
+          {data?.path && (
+            <button className="ghost" onClick={() => post("/api/reveal", { path: data.path }).catch((e) => onError((e as Error).message))}>
+              <Folder size={15} /> show in Explorer
+            </button>
+          )}
+          <button className="ghost" onClick={onClose}>
+            close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
