@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CaptureUpdateAction, Excalidraw, convertToExcalidrawElements } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw, MainMenu, convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import { get, post, type Manifest, type NodeAddr, type State } from "./client";
 import { collectSources, humanMode, humanStatus, itemWorst, placeholderView, NEEDS_YOU, WRONG, type SourcePill } from "./model";
@@ -207,7 +207,7 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
 
   const rebuild = useCallback(() => {
     const api = apiRef.current;
-    if (!api) return;
+    if (!api || !state.manifest) return;
     if (pointerDown.current) {
       rebuildQueued.current = true;
       return;
@@ -255,6 +255,8 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
   const process = useCallback(() => {
     const api = apiRef.current;
     if (!api || Date.now() < suppressUntil.current) return;
+    // While the workflow doesn't compile, the canvas is a picture, not an editor.
+    if (state.compileError) return;
     const els = api.getSceneElements();
     const appState = api.getAppState();
     const alive = new Map(els.filter((el) => !el.isDeleted).map((el) => [String(el.id), el]));
@@ -285,40 +287,60 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
     }
     if (Object.keys(movedLayout).length) void post("/api/layout", { positions: movedLayout }).catch((e) => onError(e.message));
 
-    // 2. deletions of flowy elements
-    for (const [flId] of expectedFl.current) {
-      if (alive.has(flId)) continue;
-      if (flId.startsWith("fl-edge-")) {
-        const [from, to] = flId.slice(8).split("--");
+    // 2. deletions of flowy elements — gather first: deleting a card also
+    //    auto-deletes its attached arrows and bound text, which are NOT
+    //    separate intentions.
+    const deleted = [...expectedFl.current.keys()].filter((flId) => !alive.has(flId));
+    if (deleted.length) {
+      const deletedCards = new Set(
+        deleted.filter((d) => d.startsWith("fl-node-") || d.startsWith("fl-fe-") || d.startsWith("fl-src-")).map((d) => d.replace(/^fl-(node|fe|src)-/, "")),
+      );
+      const touchesDeletedCard = (flId: string): boolean => {
+        if (flId.startsWith("fl-edge-")) {
+          const [a, b] = flId.slice(8).split("--");
+          return deletedCards.has(a) || deletedCards.has(b);
+        }
+        if (flId.startsWith("fl-ctx-")) {
+          const [idxS, node] = flId.slice(7).split("--");
+          return deletedCards.has(node) || deletedCards.has(idxS);
+        }
+        return false;
+      };
+      let needsRebuild = false;
+      for (const flId of deleted) {
         expectedFl.current.delete(flId);
-        void post("/api/graph/edge", { op: "remove", from, to }).catch((e) => {
-          onError(e.message);
-          rebuild();
-        });
-      } else if (flId.startsWith("fl-ctx-")) {
-        const [idxS, node] = flId.slice(7).split("--");
-        const s = sources[parseInt(idxS, 10)];
-        expectedFl.current.delete(flId);
-        if (s) void post("/api/graph/context", { op: "remove", node, entry: s.entry }).catch((e) => {
-          onError(e.message);
-          rebuild();
-        });
-      } else if (flId.startsWith("fl-node-")) {
-        const id = flId.slice(8);
-        expectedFl.current.delete(flId);
-        if (window.confirm(`Delete the step "${id}" and its file? (its past runs stay on disk)`)) {
-          void post("/api/graph/node", { op: "remove", id }).catch((e) => {
+        if (flId.startsWith("fl-edge-") && !touchesDeletedCard(flId)) {
+          const [from, to] = flId.slice(8).split("--");
+          void post("/api/graph/edge", { op: "remove", from, to }).catch((e) => {
             onError(e.message);
             rebuild();
           });
-        } else rebuild();
-      } else if (flId.startsWith("fl-fe-")) {
-        expectedFl.current.delete(flId);
-        onError("a checklist can't be deleted from the canvas — remove the foreach block in workflow.yaml");
-        rebuild();
-      } else {
-        expectedFl.current.delete(flId); // bound text of a deleted card; nothing to do
+        } else if (flId.startsWith("fl-ctx-") && !touchesDeletedCard(flId)) {
+          const [idxS, node] = flId.slice(7).split("--");
+          const s = sources[parseInt(idxS, 10)];
+          if (s)
+            void post("/api/graph/context", { op: "remove", node, entry: s.entry }).catch((e) => {
+              onError(e.message);
+              rebuild();
+            });
+        } else if (flId.startsWith("fl-node-")) {
+          const id = flId.slice(8);
+          if (window.confirm(`Delete the step "${id}" and its file? (its past runs stay on disk)`)) {
+            void post("/api/graph/node", { op: "remove", id }).catch((e) => {
+              onError(e.message);
+              rebuild();
+            });
+          } else needsRebuild = true;
+        } else if (flId.startsWith("fl-fe-")) {
+          onError("a checklist can't be deleted from the canvas yet — remove the foreach block in workflow.yaml");
+          needsRebuild = true;
+        } else if (flId.startsWith("fl-src-")) {
+          onError("source pills come from the steps that read them — delete their arrows instead to detach the file");
+          needsRebuild = true;
+        }
+        // anything else (bound text of a removed card) needs no action
       }
+      if (needsRebuild) rebuild();
     }
 
     // 3. new arrows the human drew between flowy elements
@@ -423,7 +445,12 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
         onChange={onChange}
         initialData={{ appState: { viewBackgroundColor: "#f6f4ee", currentItemFontFamily: 1, currentItemStrokeColor: INK }, scrollToContent: true }}
         UIOptions={{ canvasActions: { loadScene: false, clearCanvas: false, export: false, toggleTheme: false } }}
-      />
+      >
+        <MainMenu>
+          <MainMenu.DefaultItems.SaveAsImage />
+          <MainMenu.DefaultItems.Help />
+        </MainMenu>
+      </Excalidraw>
       {chip && (
         <button className="open-chip" style={{ left: chip.x + 8, top: chip.y - 6 }} onClick={() => onOpen(chip.target)}>
           {chip.label} →

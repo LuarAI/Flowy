@@ -142,6 +142,13 @@ export async function removeNode(dir: string, id: string): Promise<void> {
   const spec = m.nodes[id];
   if (!spec) throw new Error(`unknown node "${id}"`);
   if (spec.foreach) throw new Error(`"${id}" is inside a foreach; edit the nested workflow directly`);
+  // Refuse BEFORE touching any file — a half-deleted node breaks the workflow.
+  for (const fe of Object.values(m.foreach)) {
+    if (fe.source.node === id) throw new Error(`can't delete "${id}": the checklist "${fe.id}" reads its list (${fe.source.node}.${fe.source.key}). Repoint or remove that checklist first.`);
+  }
+  for (const other of Object.values(m.nodes)) {
+    if (other.continues === id) throw new Error(`can't delete "${id}": "${other.id}" continues its session. Remove that first.`);
+  }
   for (const other of Object.values(m.nodes)) if (other.needs.includes(id)) await editNeeds(other.file, (n) => n.filter((x) => x !== id));
   const wfFile = path.join(dir, "workflow.yaml");
   const text = (await readText(wfFile)).replace(/\r\n/g, "\n");
