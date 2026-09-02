@@ -30,6 +30,39 @@ previous conversation knew. Whatever it needs must arrive as a file under
 `in/_inputs.json`. If you find yourself writing "as discussed earlier" in a
 prompt, the workflow is wrong.
 
+## Starting from nothing
+
+Creating a workflow means creating a folder. The minimum:
+
+```yaml
+# <folder>/workflow.yaml
+flowy: 0
+name: my-flow
+engine:
+  default: claude
+  claude:
+    permission_mode: dontAsk
+concurrency: 3
+nodes:
+  - first-step          # one nodes/first-step.md per entry
+```
+
+plus `nodes/<id>.md` files. `context/` and `scripts/` as needed;
+`layout.canvas` is generated. Two files are Flowy's own — never author or
+edit them: `sketch.excalidraw.json` (the human's canvas drawings) and
+`.flowy/` (compile output and undo snapshots). `runs/` is runtime state.
+
+Validate with `flowy compile <folder>` — or, when `flowy` is not on PATH,
+`node <flowy-repo>/dist/cli.js compile <folder>`. The human previews with
+`flowy serve <folder>` and runs from there or with `flowy run`.
+
+When turning a human's EXISTING process notes into a workflow, translate
+their steps faithfully: their gates become `approve:` blocks, their
+conversations become `chat` nodes, their tools become `script` nodes whose
+commands are described honestly (contract in `scripts/README.md`) even if
+the scripts don't exist yet, and their guideline documents become
+`context:` entries pointing at the real files (absolute paths are fine).
+
 ## Authoring checklist
 
 1. **Start from the human's existing process description.** Most people

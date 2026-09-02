@@ -30,9 +30,9 @@ export function Header({ state, onRun, onStop, act }: Props) {
     setShowNew(false);
   };
 
-  const pickContext = async () => {
+  const pickContext = async (kind: "file" | "folder") => {
     try {
-      const r = await post<{ path: string | null }>("/api/pick", { kind: "file" });
+      const r = await post<{ path: string | null }>("/api/pick", { kind });
       if (r.path) window.dispatchEvent(new CustomEvent("flowy:add-source", { detail: { path: r.path } }));
     } catch {
       window.dispatchEvent(new CustomEvent("flowy:add-source", { detail: {} })); // fall back to asking on-canvas
@@ -48,8 +48,11 @@ export function Header({ state, onRun, onStop, act }: Props) {
       <button className="ghost" onClick={() => window.dispatchEvent(new CustomEvent("flowy:add-step"))} title="or just draw a rectangle on the canvas">
         + step
       </button>
-      <button className="ghost" onClick={pickContext} title="pick a file; it lands as a pill — draw an arrow to give it to a step">
+      <button className="ghost" onClick={() => pickContext("file")} title="pick a file; it lands as a pill — draw an arrow to give it to a step">
         + context
+      </button>
+      <button className="ghost" onClick={() => pickContext("folder")} title="pick a whole folder as context (steps read everything in it)">
+        + folder
       </button>
       {state.undo > 0 && !running && (
         <button className="ghost" onClick={() => act(() => post("/api/graph/undo"))} title="undo the last canvas edit to the files">
