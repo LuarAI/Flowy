@@ -43,6 +43,8 @@ function isFlowyOwned(el: ExEl): boolean {
 interface Sketch {
   elements: ExEl[];
   sources: Record<string, { x: number; y: number }>;
+  /** Context files picked but not yet wired to a step (absolute or workflow-relative paths). */
+  unattached?: string[];
 }
 
 export interface OpenTarget {
@@ -59,7 +61,7 @@ interface Props {
 }
 
 interface PendingBox {
-  rawId: string;
+  rawId: string | null; // null: created from the "+ step" button, no drawn box to replace
   x: number;
   y: number;
 }
@@ -195,6 +197,29 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
       }
     });
 
+    // context files picked but not yet wired — loose pills; draw an arrow to attach
+    (sketchRef.current.unattached ?? []).forEach((p, i) => {
+      const base = p.split(/[\\/]/).pop() ?? p;
+      const saved = sketchRef.current.sources[`u:${p}`];
+      const pos = saved ?? { x: 60, y: 60 + i * 92 };
+      skeletons.push({
+        type: "rectangle",
+        id: `fl-usrc-${i}`,
+        x: pos.x,
+        y: pos.y,
+        width: 224,
+        height: 62,
+        strokeColor: MUTED,
+        backgroundColor: CARD_BG,
+        fillStyle: "solid",
+        strokeWidth: 1,
+        strokeStyle: "dashed",
+        roughness: 1,
+        customData: { flowy: { kind: "unattached", path: p } },
+        label: { text: `▣ ${base}\ndraw an arrow to a step`, fontSize: 13, fontFamily: 1, textAlign: "left", verticalAlign: "top", strokeColor: MUTED },
+      });
+    });
+
     // dependency edges among top-level vertices
     const topSet = new Set(m.top);
     const seen = new Set<string>();
@@ -302,6 +327,15 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
               saveSketch();
             }
           }
+        } else if (flId.startsWith("fl-usrc-")) {
+          const p = (sketchRef.current.unattached ?? [])[parseInt(flId.slice(8), 10)];
+          if (p) {
+            const prev = sketchRef.current.sources[`u:${p}`];
+            if (!prev || Math.abs(prev.x - el.x) > 1 || Math.abs(prev.y - el.y) > 1) {
+              sketchRef.current.sources[`u:${p}`] = { x: el.x, y: el.y };
+              saveSketch();
+            }
+          }
         }
       }
       if (Object.keys(movedLayout).length) await post("/api/layout", { positions: movedLayout }).catch((e) => errors.push(e.message));
@@ -370,6 +404,12 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
             }
           } else mustRebuild = true;
         }
+        const usrcDeletes = deleted.filter((d) => d.startsWith("fl-usrc-")).map((d) => (sketchRef.current.unattached ?? [])[parseInt(d.slice(8), 10)]).filter(Boolean);
+        if (usrcDeletes.length) {
+          sketchRef.current.unattached = (sketchRef.current.unattached ?? []).filter((p) => !usrcDeletes.includes(p));
+          saveSketch();
+          mustRebuild = true;
+        }
         if (srcDeletes.length) {
           for (const s of srcDeletes) {
             const survivors = s.targets.filter((t) => !deletedCards.has(t.id));
@@ -408,6 +448,23 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
               consumed.current.delete(id);
               mustRebuild = true;
             });
+          }
+        } else if (toNode && from.startsWith("fl-usrc-")) {
+          const p = (sketchRef.current.unattached ?? [])[parseInt(from.slice(8), 10)];
+          if (p) {
+            consumed.current.add(id);
+            const entry = relativeEntry(p, state.dir);
+            await post("/api/graph/context", { op: "add", node: toNode, entry })
+              .then(() => {
+                sketchRef.current.unattached = (sketchRef.current.unattached ?? []).filter((x) => x !== p);
+                saveSketch();
+                mustRebuild = true;
+              })
+              .catch((e) => {
+                errors.push(e.message);
+                consumed.current.delete(id);
+                mustRebuild = true;
+              });
           }
         }
       }
@@ -464,6 +521,38 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
     debounceTimer.current = setTimeout(() => void process(), 350);
   }, [process]);
 
+  // header buttons: "+ step" and "+ context"
+  useEffect(() => {
+    const addStep = () => {
+      const api = apiRef.current;
+      const a = api?.getAppState();
+      const zoom = a?.zoom?.value ?? 1;
+      const x = a ? (a.width / 2) / zoom - a.scrollX - 118 : 400;
+      const y = a ? (a.height / 2) / zoom - a.scrollY - 40 : 200;
+      setBoxName("");
+      setPendingBox({ rawId: null, x, y });
+    };
+    const addSource = (ev: Event) => {
+      const p = (ev as CustomEvent).detail?.path as string | undefined;
+      if (!p) {
+        onError("could not open the file picker — draw the arrow from an existing pill, or add the path in the node file");
+        return;
+      }
+      const list = sketchRef.current.unattached ?? [];
+      if (!list.includes(p)) {
+        sketchRef.current.unattached = [...list, p];
+        saveSketch();
+        rebuild();
+      }
+    };
+    window.addEventListener("flowy:add-step", addStep);
+    window.addEventListener("flowy:add-source", addSource);
+    return () => {
+      window.removeEventListener("flowy:add-step", addStep);
+      window.removeEventListener("flowy:add-source", addSource);
+    };
+  }, [rebuild, saveSketch, onError]);
+
   const createStep = async () => {
     if (!pendingBox || !boxName.trim()) return;
     const id = boxName
@@ -472,13 +561,13 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
     if (!id) return;
-    consumed.current.add(pendingBox.rawId);
+    if (pendingBox.rawId) consumed.current.add(pendingBox.rawId);
     try {
       await post("/api/graph/node", { id, mode: boxKind, title: boxName.trim() });
       await post("/api/layout", { positions: { [id]: { x: pendingBox.x, y: pendingBox.y } } });
     } catch (e) {
       onError((e as Error).message);
-      consumed.current.delete(pendingBox.rawId);
+      if (pendingBox.rawId) consumed.current.delete(pendingBox.rawId);
     }
     setPendingBox(null);
   };
@@ -519,7 +608,7 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
         <div
           className="overlay"
           onClick={() => {
-            knownUser.current.add(pendingBox.rawId);
+            if (pendingBox.rawId) knownUser.current.add(pendingBox.rawId);
             setPendingBox(null);
           }}
         >
@@ -527,14 +616,14 @@ export function ExCanvas({ state, onOpen, onError }: Props) {
             <div
               className="close"
               onClick={() => {
-                knownUser.current.add(pendingBox.rawId);
+                if (pendingBox.rawId) knownUser.current.add(pendingBox.rawId);
                 setPendingBox(null);
               }}
             >
               <X />
             </div>
-            <h1>make this box a step?</h1>
-            <div className="sub">or close this and it stays a sketch</div>
+            <h1>{pendingBox.rawId ? "make this box a step?" : "new step"}</h1>
+            <div className="sub">{pendingBox.rawId ? "or close this and it stays a sketch" : "it lands in the middle of your view"}</div>
             <label>
               <span>what happens here?</span>
               <input autoFocus value={boxName} onChange={(e) => setBoxName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && createStep()} placeholder="e.g. Pick the hooks" />
@@ -593,6 +682,15 @@ function arrowSkeleton(
     start: { id: endpointId(id, true, m) },
     end: { id: endpointId(id, false, m) },
   };
+}
+
+/** A picked absolute path becomes workflow-relative when it lives inside the workflow. */
+function relativeEntry(p: string, workflowDir: string): string {
+  const norm = (s: string) => s.replace(/\\/g, "/").replace(/\/+$/, "");
+  const np = norm(p);
+  const nd = norm(workflowDir);
+  if (np.toLowerCase().startsWith(nd.toLowerCase() + "/")) return np.slice(nd.length + 1);
+  return np;
 }
 
 function endpointId(arrowId: string, isStart: boolean, m: Manifest): string {

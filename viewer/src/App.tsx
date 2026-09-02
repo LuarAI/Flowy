@@ -76,7 +76,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Header state={state} onRun={(opts) => act(() => post("/api/run", opts))} onStop={() => act(() => post("/api/stop"))} />
+      <Header state={state} onRun={(opts) => act(() => post("/api/run", opts))} onStop={() => act(() => post("/api/stop"))} act={act} />
       {error && (
         <div className="err-note" onClick={() => setError(null)}>
           {error}

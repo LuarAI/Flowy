@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { Play, Stop, X } from "./icons";
-import type { State } from "./client";
+import { Folder, Play, Redo, Stop, X } from "./icons";
+import { post, type State } from "./client";
 
 interface Props {
   state: State;
   onRun: (opts: { run?: string; inputs?: Record<string, unknown>; recompile?: boolean }) => void;
   onStop: () => void;
+  act: (fn: () => Promise<unknown>) => Promise<void>;
 }
 
-export function Header({ state, onRun, onStop }: Props) {
+export function Header({ state, onRun, onStop, act }: Props) {
   const [showNew, setShowNew] = useState(false);
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const m = state.manifest;
@@ -16,6 +17,7 @@ export function Header({ state, onRun, onStop }: Props) {
   const running = !!state.running;
   const needs = ov?.pending.length ?? 0;
   const inputDecls = Object.entries(m?.inputs ?? {});
+  const empty = (m?.top.length ?? 0) === 0;
 
   const start = () => {
     const filled: Record<string, unknown> = {};
@@ -28,17 +30,32 @@ export function Header({ state, onRun, onStop }: Props) {
     setShowNew(false);
   };
 
+  const pickContext = async () => {
+    try {
+      const r = await post<{ path: string | null }>("/api/pick", { kind: "file" });
+      if (r.path) window.dispatchEvent(new CustomEvent("flowy:add-source", { detail: { path: r.path } }));
+    } catch {
+      window.dispatchEvent(new CustomEvent("flowy:add-source", { detail: {} })); // fall back to asking on-canvas
+    }
+  };
+
   return (
     <div className="header">
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <span className="logo">flowy</span>
         <span className="wf">/ {m?.name ?? "…"}</span>
-        {state.liveManifestDiffers && ov && !running && (
-          <button className="ghost small" title="the files changed since this run started" onClick={() => onRun({ run: ov.run.id, recompile: true })}>
-            files changed — refresh the run
-          </button>
-        )}
       </div>
+      <button className="ghost" onClick={() => window.dispatchEvent(new CustomEvent("flowy:add-step"))} title="or just draw a rectangle on the canvas">
+        + step
+      </button>
+      <button className="ghost" onClick={pickContext} title="pick a file; it lands as a pill — draw an arrow to give it to a step">
+        + context
+      </button>
+      {state.undo > 0 && !running && (
+        <button className="ghost" onClick={() => act(() => post("/api/graph/undo"))} title="undo the last canvas edit to the files">
+          <Redo size={13} color="#8a857c" /> undo edit
+        </button>
+      )}
       <div className="grow" />
       {needs > 0 && (
         <span className="needs-you">
@@ -51,12 +68,12 @@ export function Header({ state, onRun, onStop }: Props) {
         </button>
       ) : (
         <>
-          {ov && ov.run.status !== "done" && (
-            <button onClick={() => onRun({ run: ov.run.id })}>
+          {ov && ov.run.status !== "done" && !empty && (
+            <button onClick={() => onRun({ run: ov.run.id, recompile: state.liveManifestDiffers || undefined })} title={state.liveManifestDiffers ? "the files changed — the run picks them up" : undefined}>
               <Play /> {ov.totals.done > 0 || needs > 0 ? "continue" : "run"}
             </button>
           )}
-          {(!ov || ov.run.status === "done") && m && (
+          {(!ov || ov.run.status === "done") && m && !empty && (
             <button onClick={() => (inputDecls.length ? setShowNew(true) : onRun({}))}>
               <Play /> run
             </button>
@@ -78,11 +95,24 @@ export function Header({ state, onRun, onStop }: Props) {
                   {k}
                   {d.required && d.default === undefined ? " — needed" : ""} {d.description ? `· ${d.description}` : ""}
                 </span>
-                <input
-                  placeholder={d.default !== undefined ? String(d.default) : d.type === "path" ? "paste a path (right-click a folder → Copy as path)" : ""}
-                  value={inputs[k] ?? ""}
-                  onChange={(e) => setInputs({ ...inputs, [k]: e.target.value })}
-                />
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    placeholder={d.default !== undefined ? String(d.default) : d.type === "path" ? "paste a path, or browse →" : ""}
+                    value={inputs[k] ?? ""}
+                    onChange={(e) => setInputs({ ...inputs, [k]: e.target.value })}
+                  />
+                  {d.type === "path" && (
+                    <button
+                      className="ghost"
+                      title="browse"
+                      onClick={() =>
+                        post<{ path: string | null }>("/api/pick", { kind: "folder" }).then((r) => r.path && setInputs((cur) => ({ ...cur, [k]: r.path! })))
+                      }
+                    >
+                      <Folder size={16} />
+                    </button>
+                  )}
+                </div>
               </label>
             ))}
             <div className="actions">

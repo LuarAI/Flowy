@@ -42,6 +42,45 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
     for (const c of clients) if (c.readyState === c.OPEN) c.send(s);
   };
 
+  // ---- undo snapshots of the authoring files (canvas edits only) ----------
+  const undoDir = path.join(dir, ".flowy", "undo");
+  const AUTHORING = ["workflow.yaml", "*/workflow.yaml", "nodes/*.md", "*/nodes/*.md"];
+  async function authoringFiles(): Promise<Record<string, string>> {
+    const fg = (await import("fast-glob")).default;
+    const rels = await fg(AUTHORING, { cwd: dir, ignore: ["runs/**", ".flowy/**", "node_modules/**"] });
+    const out: Record<string, string> = {};
+    for (const r of rels) out[r] = await fs.readFile(path.join(dir, r), "utf8");
+    return out;
+  }
+  async function snapshot(label: string): Promise<void> {
+    const files = await authoringFiles();
+    await fs.mkdir(undoDir, { recursive: true });
+    await fs.writeFile(path.join(undoDir, `${Date.now()}.json`), JSON.stringify({ label, files }));
+    const all = (await fs.readdir(undoDir)).filter((f) => f.endsWith(".json")).sort();
+    for (const f of all.slice(0, -30)) await fs.rm(path.join(undoDir, f), { force: true });
+  }
+  async function undoCount(): Promise<number> {
+    try {
+      return (await fs.readdir(undoDir)).filter((f) => f.endsWith(".json")).length;
+    } catch {
+      return 0;
+    }
+  }
+  async function undoLast(): Promise<string | null> {
+    const all = (await fs.readdir(undoDir).catch(() => [] as string[])).filter((f) => f.endsWith(".json")).sort();
+    const last = all[all.length - 1];
+    if (!last) return null;
+    const snap = JSON.parse(await fs.readFile(path.join(undoDir, last), "utf8")) as { label: string; files: Record<string, string> };
+    const current = await authoringFiles();
+    for (const rel of Object.keys(current)) if (!(rel in snap.files)) await fs.rm(path.join(dir, rel), { force: true });
+    for (const [rel, content] of Object.entries(snap.files)) {
+      await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true });
+      await fs.writeFile(path.join(dir, rel), content, "utf8");
+    }
+    await fs.rm(path.join(undoDir, last), { force: true });
+    return snap.label;
+  }
+
   async function state(runId?: string) {
     let manifest: Manifest | null = null;
     let compileError: string | null = null;
@@ -54,6 +93,10 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
     const runs = await listRuns(dir);
     const store = await loadRun(dir, runId).catch(() => null);
     const overview = store ? await api.overview(store) : null;
+    // The run's snapshot may still hold deleted steps; only count what still exists.
+    if (overview && manifest) {
+      overview.pending = overview.pending.filter((p) => p.addr.node in manifest!.nodes && (!p.addr.item || p.addr.item.foreach in manifest!.foreach));
+    }
     const layout = await readLayout(dir);
     return {
       dir,
@@ -64,6 +107,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
       runs,
       overview,
       running: running ? running.runId : null,
+      undo: await undoCount(),
       logs: logs.slice(-200),
     };
   }
@@ -226,6 +270,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
       case "/api/graph/edge": {
         const from = q("from")!;
         const to = q("to")!;
+        await snapshot(`${body.op === "remove" ? "remove" : "draw"} edge ${from} → ${to}`);
         if (body.op === "remove") await removeEdge(dir, from, to);
         else await addEdge(dir, from, to);
         log(`canvas: ${body.op === "remove" ? "removed" : "drew"} edge ${from} → ${to}`);
@@ -235,6 +280,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
       case "/api/graph/context": {
         const node = q("node")!;
         const entry = q("entry")!;
+        await snapshot(`${body.op === "remove" ? "detach" : "attach"} ${entry}`);
         if (body.op === "remove") await removeContext(dir, node, entry);
         else await addContext(dir, node, entry);
         log(`canvas: ${body.op === "remove" ? "detached" : "attached"} ${entry} ${body.op === "remove" ? "from" : "to"} ${node}`);
@@ -247,7 +293,20 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         await fs.writeFile(file, JSON.stringify(body ?? {}, null, 2));
         return { ok: true };
       }
+      case "/api/graph/undo": {
+        const label = await undoLast();
+        if (!label) return { undone: null };
+        log(`canvas: undid "${label}"`);
+        schedulePush();
+        return { undone: label };
+      }
+      case "/api/pick": {
+        const kind = q("kind") === "folder" ? "folder" : "file";
+        const picked = await nativePick(kind);
+        return { path: picked };
+      }
       case "/api/graph/node": {
+        await snapshot(body.op === "remove" ? `delete ${q("id")}` : `${String(body.op ?? "add")} ${q("id")}`);
         if (body.op === "remove") {
           const summary = await removeNode(dir, q("id")!);
           log(`canvas: ${summary}`);
@@ -298,6 +357,36 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
 function stripCompiledAt(m: Manifest) {
   const { compiledAt: _c, ...rest } = m;
   return rest;
+}
+
+/** Open the OS file/folder picker — the server runs on the user's machine. */
+async function nativePick(kind: "file" | "folder"): Promise<string | null> {
+  const { spawnProcess } = await import("../engines/proc.js");
+  let cmd: string;
+  let args: string[];
+  if (process.platform === "win32") {
+    const ps =
+      kind === "file"
+        ? "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Title = 'Pick a context file for Flowy'; if ($f.ShowDialog() -eq 'OK') { [Console]::Out.Write($f.FileName) }"
+        : "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Pick a folder for Flowy'; if ($f.ShowDialog() -eq 'OK') { [Console]::Out.Write($f.SelectedPath) }";
+    cmd = "powershell";
+    args = ["-STA", "-NoProfile", "-Command", ps];
+  } else if (process.platform === "darwin") {
+    cmd = "osascript";
+    args = ["-e", kind === "file" ? 'POSIX path of (choose file with prompt "Pick a context file for Flowy")' : 'POSIX path of (choose folder with prompt "Pick a folder for Flowy")'];
+  } else {
+    throw new Error("no native picker on this platform — paste the path instead");
+  }
+  let out = "";
+  const oc = await spawnProcess(cmd, args, {
+    cwd: process.cwd(),
+    env: process.env,
+    timeoutMs: 5 * 60_000,
+    onStdoutLine: (l) => (out += (out ? "\n" : "") + l),
+  });
+  const picked = out.trim();
+  if (oc.code !== 0 || !picked) return null;
+  return picked;
 }
 
 async function findStaticDir(): Promise<string | null> {

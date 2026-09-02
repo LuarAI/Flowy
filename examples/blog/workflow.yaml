@@ -16,9 +16,3 @@ engine:
 concurrency: 2
 
 nodes:
-  - angles
-  - foreach: angles.angles
-    id: entry
-    workflow: ./entry
-    key: slug
-    concurrency: 2

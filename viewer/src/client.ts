@@ -92,6 +92,7 @@ export interface State {
   runs: string[];
   overview: Overview | null;
   running: string | null;
+  undo: number;
   logs: string[];
 }
 
