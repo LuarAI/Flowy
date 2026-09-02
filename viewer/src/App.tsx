@@ -29,6 +29,8 @@ export function App() {
         const msg = JSON.parse(ev.data);
         if (msg.type === "state") setState(msg.state);
         else if (msg.type === "chat") window.dispatchEvent(new CustomEvent("flowy:chat-event", { detail: msg }));
+        else if (msg.type === "perm") window.dispatchEvent(new CustomEvent("flowy:perm", { detail: msg }));
+        else if (msg.type === "perm-done") window.dispatchEvent(new CustomEvent("flowy:perm-done", { detail: msg }));
         else if (msg.type === "node" || msg.type === "running") void refresh();
         else if (msg.type === "error") setError(msg.message);
       };

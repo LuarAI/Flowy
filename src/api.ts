@@ -231,7 +231,15 @@ export async function sendChatMessage(
   addr: NodeAddr,
   text: string,
   engines = new EngineRegistry(),
-  opts: { emit?: (ev: { addr: NodeAddr; event: TraceEvent }) => void; env?: NodeJS.ProcessEnv; log?: Logger; signal?: AbortSignal; model?: string } = {},
+  opts: {
+    emit?: (ev: { addr: NodeAddr; event: TraceEvent }) => void;
+    env?: NodeJS.ProcessEnv;
+    log?: Logger;
+    signal?: AbortSignal;
+    model?: string;
+    /** Route permission prompts (tools outside the allowlist) to the chat card. */
+    permission?: { url: string; token: string };
+  } = {},
 ): Promise<ChatTurn> {
   const spec = store.manifest.nodes[addr.node];
   if (!spec) throw new Error(`unknown node "${addr.node}"`);
@@ -289,6 +297,7 @@ export async function sendChatMessage(
     env: opts.env ?? process.env,
     signal: opts.signal ?? new AbortController().signal,
     onEvent: append,
+    permissionPrompt: opts.permission,
   });
   if (result) {
     result.session_id = er.sessionId ?? resume;

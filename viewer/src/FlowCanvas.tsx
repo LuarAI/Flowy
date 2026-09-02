@@ -108,6 +108,7 @@ function ChatCard({ data }: NodeProps<CardNode>) {
   };
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState<string>(v.model ?? "");
+  const [perms, setPerms] = useState<Array<{ id: string; tool: string; detail: string }>>([]);
   const [branching, setBranching] = useState(false);
   const [branchName, setBranchName] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
@@ -137,7 +138,29 @@ function ChatCard({ data }: NodeProps<CardNode>) {
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
-  }, [msgs]);
+  }, [msgs, perms]);
+
+  // permission requests: this chat wants to use a tool outside its allowlist
+  useEffect(() => {
+    const onPerm = (ev: Event) => {
+      const d = (ev as CustomEvent).detail as { id: string; addr: NodeAddr; tool: string; input: Record<string, unknown> };
+      const dk = d.addr.item ? `${d.addr.item.foreach}/${d.addr.item.id}:${d.addr.node}` : d.addr.node;
+      if (dk !== key) return;
+      const input = d.input ?? {};
+      const detail = String(input.query ?? input.command ?? input.url ?? input.prompt ?? input.file_path ?? input.path ?? "").slice(0, 120);
+      setPerms((cur) => [...cur, { id: d.id, tool: d.tool, detail }]);
+    };
+    const onDone = (ev: Event) => {
+      const d = (ev as CustomEvent).detail as { id: string };
+      setPerms((cur) => cur.filter((p) => p.id !== d.id));
+    };
+    window.addEventListener("flowy:perm", onPerm);
+    window.addEventListener("flowy:perm-done", onDone);
+    return () => {
+      window.removeEventListener("flowy:perm", onPerm);
+      window.removeEventListener("flowy:perm-done", onDone);
+    };
+  }, [key]);
 
   const send = async () => {
     const text = draft.trim();
@@ -200,7 +223,23 @@ function ChatCard({ data }: NodeProps<CardNode>) {
             </div>
           ),
         )}
-        {busy && <div className="tool-line">thinking…</div>}
+        {perms.map((p) => (
+          <div key={p.id} className="perm-ask">
+            <div className="perm-text">
+              wants to use <strong>{p.tool.replace(/^mcp__[^_]+__/, "")}</strong>
+              {p.detail ? ` — ${p.detail}` : ""}
+            </div>
+            <div className="perm-buttons">
+              <button className="primary" onClick={() => void post("/api/perm/answer", { id: p.id, behavior: "allow" })}>
+                allow
+              </button>
+              <button className="ghost" onClick={() => void post("/api/perm/answer", { id: p.id, behavior: "deny" })}>
+                deny
+              </button>
+            </div>
+          </div>
+        ))}
+        {busy && perms.length === 0 && <div className="tool-line">thinking…</div>}
       </div>
       <div className="chat-input nodrag nowheel">
         <textarea
@@ -229,7 +268,7 @@ function ChatCard({ data }: NodeProps<CardNode>) {
         <span className="grow" />
         <select
           className="model-select"
-          value={["", "opus", "sonnet", "haiku"].includes(model) ? model : model}
+          value={model}
           onChange={(e) => {
             const val = e.target.value;
             setModel(val);
@@ -239,10 +278,11 @@ function ChatCard({ data }: NodeProps<CardNode>) {
           title="which model this chat talks to (applies to the next message)"
         >
           <option value="">model: default</option>
+          <option value="claude-fable-5">fable</option>
           <option value="opus">opus</option>
           <option value="sonnet">sonnet</option>
           <option value="haiku">haiku</option>
-          {model && !["", "opus", "sonnet", "haiku"].includes(model) && <option value={model}>{model}</option>}
+          {model && !["", "claude-fable-5", "opus", "sonnet", "haiku"].includes(model) && <option value={model}>{model}</option>}
         </select>
       </div>
       {branching && (

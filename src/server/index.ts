@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import chokidar from "chokidar";
@@ -30,6 +31,9 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
   const clients = new Set<WebSocket>();
   let running: { runId: string; ac: AbortController } | null = null;
   const logs: string[] = [];
+  // permission prompts flowing from an engine turn to the chat card and back
+  const permTokens = new Map<string, NodeAddr>();
+  const pendingPerms = new Map<string, { resolve: (b: { behavior: "allow" | "deny"; message?: string }) => void }>();
 
   const log = (m: string) => {
     opts.log(m);
@@ -263,13 +267,45 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         if (ensured.created) log(`started run ${ensured.store.run.id} (first conversation)`);
         const s = ensured.store;
         const a = addr();
-        const turn = await api.sendChatMessage(s, a, q("text") ?? "", opts.engines, {
-          emit: (ev) => broadcast({ type: "chat", addr: ev.addr, event: ev.event }),
-          log,
-          model: q("model") ?? undefined,
+        const token = randomUUID();
+        permTokens.set(token, a);
+        try {
+          const turn = await api.sendChatMessage(s, a, q("text") ?? "", opts.engines, {
+            emit: (ev) => broadcast({ type: "chat", addr: ev.addr, event: ev.event }),
+            log,
+            model: q("model") ?? undefined,
+            permission: { url: `http://${host}:${opts.port}`, token },
+          });
+          schedulePush();
+          return turn;
+        } finally {
+          permTokens.delete(token);
+        }
+      }
+      case "/api/perm/request": {
+        // called by the engine's permission prompt; blocks until the human answers in the card
+        const token = q("token") ?? "";
+        const a = permTokens.get(token);
+        if (!a) return { behavior: "deny", message: "the conversation turn is over" };
+        const id = randomUUID();
+        const answer = new Promise<{ behavior: "allow" | "deny"; message?: string }>((resolve) => {
+          pendingPerms.set(id, { resolve });
+          setTimeout(() => {
+            if (pendingPerms.delete(id)) resolve({ behavior: "deny", message: "no answer" });
+          }, 10 * 60_000).unref?.();
         });
-        schedulePush();
-        return turn;
+        broadcast({ type: "perm", id, addr: a, tool: q("tool") ?? "?", input: body.input ?? {} });
+        log(`chat ${api.addrLabel(a)} asks to use ${q("tool")}`);
+        const result = await answer;
+        broadcast({ type: "perm-done", id });
+        return result;
+      }
+      case "/api/perm/answer": {
+        const p = pendingPerms.get(q("id") ?? "");
+        if (!p) return { ok: false };
+        pendingPerms.delete(q("id")!);
+        p.resolve({ behavior: q("behavior") === "allow" ? "allow" : "deny", message: q("message") ?? undefined });
+        return { ok: true };
       }
       case "/api/crystallize": {
         const s = await store();

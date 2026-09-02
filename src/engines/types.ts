@@ -17,6 +17,12 @@ export interface EngineJob {
   env: NodeJS.ProcessEnv;
   signal: AbortSignal;
   onEvent: (e: TraceEvent) => void;
+  /**
+   * When set, tools outside the allowlist ask the human instead of being
+   * denied: the engine routes permission prompts to this local endpoint
+   * (Flowy's server), which surfaces them in the chat card.
+   */
+  permissionPrompt?: { url: string; token: string };
 }
 
 export interface EngineResult {

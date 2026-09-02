@@ -569,3 +569,9 @@ label > span {
 
 .model-select { width: auto; font-size: 12px; color: var(--muted); border-bottom: 1.5px dashed var(--dash); padding: 1px 2px; cursor: pointer; }
 .model-select:hover { color: var(--ink); }
+
+/* permission ask inside a chat */
+.perm-ask { align-self: stretch; border: 2px solid var(--accent); border-radius: 12px 4px 14px 5px / 5px 14px 4px 12px; padding: 8px 12px; background: var(--accent-wash); }
+.perm-ask .perm-text { font-size: 14px; margin-bottom: 6px; word-break: break-word; }
+.perm-ask .perm-buttons { display: flex; gap: 8px; }
+.perm-ask .perm-buttons button { font-size: 13px; padding: 3px 12px; }
