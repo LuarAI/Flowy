@@ -44,6 +44,25 @@ describe("canvas chat: one engine turn per message", () => {
     expect(child.text).toContain(`resumed ${parent.session}, forked`);
   });
 
+  it("chatting on a fresh workflow needs no run: one is created, and missing context/upstreams warn instead of failing", async () => {
+    const dir = await makeWorkflow({
+      "workflow.yaml": "flowy: 0\nname: fresh\nengine: { default: mock }\ninputs:\n  brand: { type: path, required: true }\nnodes: [prep, talk]\n",
+      "nodes/prep.md": "---\nid: prep\nmode: agent\noutputs: [p.md]\n---\nx\n",
+      "nodes/talk.md": '---\nid: talk\nmode: chat\nneeds: [prep]\ncontext: ["{{inputs.brand}}/voice.md"]\n---\n',
+    });
+    // no run exists; ensureStore creates a scratch run despite the missing required input
+    const { store, created } = await api.ensureStore(dir, undefined, engines);
+    expect(created).toBe(true);
+    const turn = await api.sendChatMessage(store, { node: "talk" }, "hola", engines);
+    expect(turn.text).toContain("mock answer");
+    const res = (await store.readResult((await store.currentDir({ node: "talk" }))!))!;
+    const warnings = res.meta.warnings as string[];
+    expect(warnings.join(" ")).toContain("voice.md");
+    expect(warnings.join(" ")).toContain('"prep"');
+    // second ensureStore reuses the run
+    expect((await api.ensureStore(dir, undefined, engines)).created).toBe(false);
+  });
+
   it("done is explicit for open chats", async () => {
     const dir = await makeWorkflow(files);
     const { store } = await runWf(dir);

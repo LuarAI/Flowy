@@ -37,6 +37,8 @@ export interface ExecOptions {
   /** Always create a new version, even if cached. */
   force?: boolean;
   feedback?: string;
+  /** Interactive chat preparation: missing context/upstreams warn instead of failing. */
+  lenient?: boolean;
 }
 
 export type ExecOutcome = { kind: "cached"; version: string } | { kind: "ran"; result: NodeResult; version: string };
@@ -101,7 +103,9 @@ export async function executeNode(ctx: ExecContext, addr: NodeAddr, opts: ExecOp
 
   try {
     // Materialize inputs.
-    const sources = await collectInputSources(store, spec, addr, tctx);
+    const warnings: string[] = [];
+    const sources = await collectInputSources(store, spec, addr, tctx, { lenient: opts.lenient, warnings });
+    if (warnings.length) result.meta.warnings = warnings;
     const mat = await materialize(store, spec, addr, vdir, tctx, sources, {
       previousOutDir: opts.force && previousDir ? path.join(previousDir, "out") : null,
       item,

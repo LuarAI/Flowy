@@ -155,15 +155,15 @@ export class RunStore {
   }
 }
 
-/** Resolve and validate run inputs against the manifest (SPEC §1.1). */
-export function resolveInputs(manifest: Manifest, given: Record<string, unknown>, cwd = process.cwd()): Record<string, unknown> {
+/** Resolve and validate run inputs against the manifest (SPEC §1.1). `lenient` fills missing required inputs with null (scratch runs for chatting). */
+export function resolveInputs(manifest: Manifest, given: Record<string, unknown>, cwd = process.cwd(), opts: { lenient?: boolean } = {}): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const errors: string[] = [];
   for (const [name, decl] of Object.entries(manifest.inputs)) {
     let v = given[name];
     if (v === undefined || v === null || v === "") v = decl.default;
     if (v === undefined || v === null) {
-      if (decl.required) errors.push(`missing required input "${name}"`);
+      if (decl.required && !opts.lenient) errors.push(`missing required input "${name}"`);
       out[name] = null;
       continue;
     }

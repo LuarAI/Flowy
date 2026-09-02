@@ -49,9 +49,10 @@ export async function computeSignature(store: RunStore, addr: NodeAddr): Promise
   let sources;
   try {
     sources = await collectInputSources(store, spec, addr, tctx);
-  } catch (e) {
-    if (e instanceof InputsNotReady) return null;
-    throw e;
+  } catch {
+    // Missing upstream, unresolved template, absent context: the signature
+    // simply cannot be computed yet — that means "not cached", never an error.
+    return null;
   }
   const hashes = await hashSources(sources, store.manifest.link_threshold);
   const { body: _b, file: _f, ...fm } = spec;

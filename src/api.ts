@@ -74,6 +74,20 @@ export async function getStore(dir: string, runId?: string): Promise<RunStore> {
   return s;
 }
 
+/**
+ * Like getStore, but a missing run is never a wall: chatting on a fresh
+ * workflow silently creates a scratch run (missing required inputs stay
+ * null until a real run fills them).
+ */
+export async function ensureStore(dir: string, runId?: string, engines = new EngineRegistry()): Promise<{ store: RunStore; created: boolean }> {
+  const existing = await loadRun(dir, runId);
+  if (existing) return { store: existing, created: false };
+  if (runId) throw new Error(`run "${runId}" not found`);
+  const manifest = await compile(dir, engines);
+  const store = await createRun(manifest, resolveInputs(manifest, {}, process.cwd(), { lenient: true }));
+  return { store, created: true };
+}
+
 export async function overview(store: RunStore, checkStale = true): Promise<RunOverview> {
   await updateItemStates(store);
   return runOverview(store, { checkStale });
@@ -225,12 +239,13 @@ export async function sendChatMessage(
   if (!text.trim()) throw new Error("empty message");
   let vdir = await store.currentDir(addr);
   if (!vdir) {
-    const out = await executeNode({ store, engines, signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr, {});
+    const out = await executeNode({ store, engines, signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr, { lenient: true });
     vdir = store.versionDir(addr, out.version);
   }
   const result = await store.readResult(vdir);
   const engine = engines.get(spec.engine ?? store.manifest.engine.default);
   if (!engine.capabilities.includes("resume")) throw new Error(`engine "${engine.name}" cannot hold a conversation`);
+  const prepWarnings = Array.isArray(result?.meta?.warnings) ? (result!.meta.warnings as string[]) : [];
 
   let resume = result?.session_id ?? null;
   let fork = false;
@@ -257,7 +272,9 @@ export async function sendChatMessage(
   const addDirs = [...new Set((JSON.parse(refs) as Array<{ path: string }>).map((r) => path.dirname(r.path)))];
   const preamble = resume
     ? ""
-    : `Working directory contract: your inputs are under ./in (read-only); anything you produce goes into ./out. Keep answers conversational and concise.\n\n${spec.body.trim() ? spec.body.trim() + "\n\n" : ""}`;
+    : `Working directory contract: your inputs are under ./in (read-only); anything you produce goes into ./out. Keep answers conversational and concise.\n\n${
+        prepWarnings.length ? `Note: not everything is in place yet (${prepWarnings.join("; ")}) — work with what exists and say so when something is missing.\n\n` : ""
+      }${spec.body.trim() ? spec.body.trim() + "\n\n" : ""}`;
   const er = await engine.run({
     cwd: vdir,
     prompt: preamble + text,
@@ -304,7 +321,7 @@ export async function chat(
   let vdir = await store.currentDir(addr);
   if (!vdir) {
     // Prepare the version (materialize inputs, write prompt.md) without running an engine.
-    const out = await executeNode({ store, engines, signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr, {});
+    const out = await executeNode({ store, engines, signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr, { lenient: true });
     vdir = store.versionDir(addr, out.version);
   }
   const result = await store.readResult(vdir);

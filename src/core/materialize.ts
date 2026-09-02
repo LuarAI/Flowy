@@ -30,22 +30,35 @@ export function contextTargetPath(entry: string, resolved: string, wfDir: string
 /**
  * Enumerate every file the node will see under in/ (SPEC §4), without copying.
  * Throws InputsNotReady when an upstream node has no current version.
+ * With `lenient` (interactive chats), missing context and not-yet-run
+ * upstreams become entries in `warnings` instead of failures.
  */
-export async function collectInputSources(store: RunStore, spec: NodeSpec, addr: NodeAddr, tctx: TemplateContext): Promise<InputSource[]> {
+export async function collectInputSources(
+  store: RunStore,
+  spec: NodeSpec,
+  addr: NodeAddr,
+  tctx: TemplateContext,
+  opts: { lenient?: boolean; warnings?: string[] } = {},
+): Promise<InputSource[]> {
   const m = store.manifest;
   const out: InputSource[] = [];
+  const warn = (msg: string) => opts.warnings?.push(msg);
 
   // context
   for (const entry of spec.context) {
-    const resolvedEntry = resolveTemplate(entry, tctx);
-    const abs = path.isAbsolute(resolvedEntry) ? resolvedEntry : path.resolve(spec.workflowDir, resolvedEntry);
-    const target = contextTargetPath(entry, abs, spec.workflowDir);
-    if (await isDir(abs)) {
+    const resolvedEntry = resolveTemplate(entry, tctx).trim();
+    const abs = resolvedEntry ? (path.isAbsolute(resolvedEntry) ? resolvedEntry : path.resolve(spec.workflowDir, resolvedEntry)) : "";
+    // an unfilled {{inputs.x}} must never dissolve into "include the whole workflow folder"
+    const degenerate = !resolvedEntry || path.resolve(abs) === path.resolve(spec.workflowDir);
+    const target = degenerate ? "" : contextTargetPath(entry, abs, spec.workflowDir);
+    if (!degenerate && (await isDir(abs))) {
       for (const f of await listFiles(abs)) out.push({ rel: `context/${target}/${f}`, abs: path.join(abs, f), signed: true, group: "context" });
-    } else if (await exists(abs)) {
+    } else if (!degenerate && (await exists(abs))) {
       out.push({ rel: `context/${target}`, abs, signed: true, group: "context" });
+    } else if (opts.lenient) {
+      warn(`context not available yet: ${entry}`);
     } else {
-      throw new Error(`context path not found: ${entry} (${abs})`);
+      throw new Error(`context path not found: ${entry} (${abs || "empty after templating"})`);
     }
   }
   const seen = new Set<string>();
@@ -73,7 +86,13 @@ export async function collectInputSources(store: RunStore, spec: NodeSpec, addr:
       const depSpec = m.nodes[dep];
       const depAddr: NodeAddr = depSpec.foreach && addr.item ? { node: dep, item: addr.item } : { node: dep };
       const vdir = await store.currentDir(depAddr);
-      if (!vdir) throw new InputsNotReady(`upstream "${dep}" has no current version`);
+      if (!vdir) {
+        if (opts.lenient) {
+          warn(`"${dep}" hasn't produced anything yet`);
+          continue;
+        }
+        throw new InputsNotReady(`upstream "${dep}" has no current version`);
+      }
       await pushOutputs(out, vdir, dep);
     }
   }

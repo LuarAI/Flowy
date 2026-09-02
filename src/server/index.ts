@@ -259,7 +259,9 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         return { ok: true };
       }
       case "/api/chat-message": {
-        const s = await store();
+        const ensured = await api.ensureStore(dir, q("run") ?? undefined, opts.engines);
+        if (ensured.created) log(`started run ${ensured.store.run.id} (first conversation)`);
+        const s = ensured.store;
         const a = addr();
         const turn = await api.sendChatMessage(s, a, q("text") ?? "", opts.engines, {
           emit: (ev) => broadcast({ type: "chat", addr: ev.addr, event: ev.event }),

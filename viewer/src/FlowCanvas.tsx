@@ -76,8 +76,24 @@ function ChatCard({ data }: NodeProps<CardNode>) {
   const { ctx, view: v } = data;
   const addr = v.addr;
   const key = addr.item ? `${addr.item.foreach}/${addr.item.id}:${addr.node}` : addr.node;
+  const draftKey = `flowy-draft:${ctx.state.dir}:${addr.node}`;
   const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraftRaw] = useState<string>(() => {
+    try {
+      return localStorage.getItem(draftKey) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const setDraft = (v: string) => {
+    setDraftRaw(v);
+    try {
+      if (v) localStorage.setItem(draftKey, v);
+      else localStorage.removeItem(draftKey);
+    } catch {
+      /* storage unavailable */
+    }
+  };
   const [busy, setBusy] = useState(false);
   const [branching, setBranching] = useState(false);
   const [branchName, setBranchName] = useState("");
@@ -113,12 +129,13 @@ function ChatCard({ data }: NodeProps<CardNode>) {
   const send = async () => {
     const text = draft.trim();
     if (!text || busy) return;
-    setDraft("");
     setBusy(true);
     try {
+      // Never clear what the human typed until the turn actually succeeded.
       await post("/api/chat-message", { run: runId, node: addr.node, item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined, text });
+      setDraft("");
     } catch (e) {
-      ctx.onError((e as Error).message);
+      ctx.onError(`your message is still in the box — ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
