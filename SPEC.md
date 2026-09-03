@@ -561,9 +561,14 @@ Non-negotiable rules (see `DECISIONS.md` D1):
    under a *different* cwd (a branch forking its parent's session, a feedback
    rerun continuing the previous version's), the adapter copies the
    transcript file into the target cwd's bucket — byte for byte, unparsed,
-   between the user's own local folders. Failed turns never persist the
-   reported session id: the CLI mints one even when no transcript was
-   written, and adopting it would poison every later resume.
+   between the user's own local folders. Session ids are taken from the
+   stream's `init` event only — init means a transcript exists on disk. A
+   run that dies before init (a failed resume) yields no id and stores
+   none: the id its result *reports* is a phantom, and adopting it would
+   poison every later resume. An *interrupted* turn (timeout, kill) did
+   init, so its id is kept and the next message resumes the work done so
+   far. Chat turns honor the node's `timeout:` (30m default) rather than
+   a hardcoded cap.
 
 Capabilities: `structured_output`, `resume`, `thinking`, `subagent_trace`,
 `cost`.

@@ -291,7 +291,8 @@ export async function sendChatMessage(
     tools: spec.tools,
     outputs: spec.outputs,
     schema: null,
-    timeoutMs: 10 * 60_000,
+    // A chat turn can hold real agent work; honor the node's `timeout:` (30m default).
+    timeoutMs: spec.timeoutMs,
     resumeSession: resume,
     forkSession: fork,
     addDirs,
@@ -306,9 +307,12 @@ export async function sendChatMessage(
     })(),
   });
   if (result) {
-    // A failed turn reports a session id for a transcript that was never
-    // written; adopting it would poison every later resume of this chat.
-    if (er.exitCode === 0) result.session_id = er.sessionId ?? resume;
+    // The engine reports a session id only when a transcript actually exists,
+    // so keep it even for an interrupted turn — the next message resumes the
+    // conversation with all the work done so far. A turn that failed before a
+    // transcript existed reports none, and stores none (no phantom ids).
+    if (er.sessionId) result.session_id = er.sessionId;
+    else if (er.exitCode === 0) result.session_id = resume;
     result.cost_usd = (result.cost_usd ?? 0) + (er.costUsd ?? 0);
     if (er.tokens) {
       result.tokens = result.tokens
@@ -318,7 +322,13 @@ export async function sendChatMessage(
     result.turns = (result.turns ?? 0) + 1;
     await store.writeResult(vdir, result);
   }
-  if (er.exitCode !== 0) throw new Error(er.error ?? `the turn failed (exit ${er.exitCode})`);
+  if (er.exitCode !== 0) {
+    if (er.timedOut)
+      throw new Error(
+        `the turn ran past this chat's ${spec.timeout} limit and was stopped — nothing is lost, the conversation is saved; send another message to pick up where it left off (raise it with \`timeout:\` in nodes/${spec.id}.md)`,
+      );
+    throw new Error(er.error ?? `the turn failed (exit ${er.exitCode})`);
+  }
   await settleWaiting({ store, engines, signal: new AbortController().signal, log: () => {}, emit: () => {} }, addr);
   return { text: er.text ?? "", session: er.sessionId ?? resume, costUsd: er.costUsd };
 }

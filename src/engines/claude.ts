@@ -199,7 +199,10 @@ export class ClaudeEngine implements Engine {
           }
           if (!blocks.length) emit("text", ev);
         } else if (type === "result") {
-          if (typeof ev.session_id === "string") res.sessionId = ev.session_id;
+          // Session id comes from the init event only: init means a transcript
+          // exists on disk. A run that dies before init (e.g. "No conversation
+          // found") still *reports* an id in its result — a phantom that must
+          // not be stored, or every later resume of the chat fails.
           if (typeof ev.result === "string") res.text = ev.result;
           if (typeof ev.total_cost_usd === "number") res.costUsd = ev.total_cost_usd;
           if (typeof ev.num_turns === "number") res.turns = ev.num_turns;
@@ -221,6 +224,8 @@ export class ClaudeEngine implements Engine {
     res.exitCode = outcome.code;
     res.timedOut = outcome.timedOut;
     res.aborted = outcome.aborted;
+    // A killed process emits no result event; leave an end marker in the trace.
+    if (outcome.timedOut) emit("end", { timed_out: true, after_ms: job.timeoutMs });
     if (outcome.code !== 0 && !res.error) res.error = lastError ?? outcome.stderrTail ?? `exit ${outcome.code}`;
     else if (lastError) res.error = lastError;
     return res;
