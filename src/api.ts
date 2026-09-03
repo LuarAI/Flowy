@@ -219,6 +219,8 @@ export interface ChatTurn {
   text: string;
   session: string | null;
   costUsd: number | null;
+  /** The human stopped this turn; partial work is kept and the session resumes. */
+  stopped?: boolean;
 }
 
 /**
@@ -321,6 +323,12 @@ export async function sendChatMessage(
     }
     result.turns = (result.turns ?? 0) + 1;
     await store.writeResult(vdir, result);
+  }
+  if (er.aborted) {
+    // The human hit stop: not an error. The partial work stays in the trace
+    // and the session (persisted above, from init) resumes on the next message.
+    append({ t: new Date().toISOString(), type: "end", engine: engine.name, payload: { stopped: true } });
+    return { text: er.text ?? "", session: result?.session_id ?? null, costUsd: er.costUsd, stopped: true };
   }
   if (er.exitCode !== 0) {
     if (er.timedOut)

@@ -578,3 +578,13 @@ label > span {
 
 /* text inside chats is selectable (React Flow sets user-select: none on nodes) */
 .bubbles, .bubbles * , .paper, .paper * { user-select: text; -webkit-user-select: text; }
+
+/* queued messages: typed while a turn runs, sent when it ends */
+.bubble.queued {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.chat-input button.stop {
+  color: var(--accent);
+  font-size: 11px;
+}

@@ -76,6 +76,10 @@ function traceToMessages(trace: TraceEvent[]): ChatMsg[] {
         if (typeof pth === "string") detail = pth.replace(/\\/g, "/").split("/").pop()!.slice(0, 64);
       }
       out.push({ role: "tool", text: `${String((p as Record<string, unknown>).name)}${detail ? ` · ${detail}` : ""}` });
+    } else if (e.type === "end" && p && typeof p === "object" && (p as Record<string, unknown>).stopped === true) {
+      out.push({ role: "tool", text: "■ stopped — this conversation continues where it left off" });
+    } else if (e.type === "end" && p && typeof p === "object" && (p as Record<string, unknown>).timed_out === true) {
+      out.push({ role: "tool", text: "⏱ hit this chat's turn time limit — send a message to continue" });
     }
   }
   // merge consecutive identical tool lines
@@ -107,6 +111,9 @@ function ChatCard({ data }: NodeProps<CardNode>) {
     }
   };
   const [busy, setBusy] = useState(false);
+  // Messages typed while a turn is running: sent, in order, the moment it ends.
+  const [queue, setQueue] = useState<string[]>([]);
+  const queueRef = useRef<string[]>([]);
   const [model, setModel] = useState<string>(v.model ?? "");
   const [stance, setStance] = useState<string>(v.permissions ?? "ask");
   const [perms, setPerms] = useState<Array<{ id: string; tool: string; detail: string }>>([]);
@@ -163,25 +170,45 @@ function ChatCard({ data }: NodeProps<CardNode>) {
     };
   }, [key]);
 
+  const postTurn = (text: string) =>
+    post<{ stopped?: boolean }>("/api/chat-message", {
+      run: runId,
+      node: addr.node,
+      item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined,
+      text,
+      model: model || undefined,
+      permissions: stance !== "ask" ? stance : undefined,
+    });
+
   const send = async () => {
     const text = draft.trim();
-    if (!text || busy) return;
+    if (!text) return;
+    if (busy) {
+      // A turn is running: queue it — it sends the moment the turn ends.
+      queueRef.current = [...queueRef.current, text];
+      setQueue(queueRef.current);
+      setDraft("");
+      return;
+    }
     setBusy(true);
     // The bubble shows the message now; if the turn fails it comes back below.
     setDraft("");
+    let current = text;
     try {
-      await post("/api/chat-message", {
-        run: runId,
-        node: addr.node,
-        item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined,
-        text,
-        model: model || undefined,
-        permissions: stance !== "ask" ? stance : undefined,
-      });
+      for (;;) {
+        await postTurn(current);
+        const next = queueRef.current.shift();
+        setQueue([...queueRef.current]);
+        if (next === undefined) break;
+        current = next;
+      }
     } catch (e) {
-      // Put the message back in the box — unless the human already typed something new.
+      // Everything unsent comes back to the box: the failed message plus the queue.
+      const back = [current, ...queueRef.current].join("\n");
+      queueRef.current = [];
+      setQueue([]);
       setDraftRaw((cur) => {
-        const keep = cur.trim() ? cur : text;
+        const keep = cur.trim() ? cur : back;
         try {
           localStorage.setItem(draftKey, keep);
         } catch {
@@ -194,6 +221,9 @@ function ChatCard({ data }: NodeProps<CardNode>) {
       setBusy(false);
     }
   };
+
+  const stopTurn = () =>
+    void post("/api/chat-stop", { run: runId, node: addr.node, item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined }).catch(() => {});
 
   const branch = async () => {
     const id = branchName
@@ -241,6 +271,11 @@ function ChatCard({ data }: NodeProps<CardNode>) {
             </div>
           ),
         )}
+        {queue.map((t, i) => (
+          <div key={`q${i}`} className="bubble user queued" title="queued — sends when this turn ends">
+            {t}
+          </div>
+        ))}
         {perms.map((p) => (
           <div key={p.id} className="perm-ask">
             <div className="perm-text">
@@ -262,7 +297,7 @@ function ChatCard({ data }: NodeProps<CardNode>) {
       <div className="chat-input nodrag nowheel">
         <textarea
           rows={1}
-          placeholder={busy ? "…" : "talk to it"}
+          placeholder={busy ? "queue a message — sends when this turn ends" : "talk to it"}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -272,9 +307,15 @@ function ChatCard({ data }: NodeProps<CardNode>) {
             }
           }}
         />
-        <button className="ghost" disabled={busy || !draft.trim()} onClick={() => void send()} title="send (Enter)">
-          <Play size={13} />
-        </button>
+        {busy ? (
+          <button className="ghost stop" onClick={stopTurn} title="stop this turn — everything done so far is kept">
+            ■
+          </button>
+        ) : (
+          <button className="ghost" disabled={!draft.trim()} onClick={() => void send()} title="send (Enter)">
+            <Play size={13} />
+          </button>
+        )}
       </div>
       <div className="chat-actions nodrag">
         <button className="ghost small" disabled={!v.result?.session_id || busy} onClick={() => ctx.act(() => post("/api/crystallize", { run: runId, node: addr.node, item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined }))} title="distill this conversation into the recipe — next time it runs alone">

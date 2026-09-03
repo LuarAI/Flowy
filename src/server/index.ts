@@ -33,6 +33,8 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
   const logs: string[] = [];
   // permission prompts flowing from an engine turn to the chat card and back
   const permTokens = new Map<string, NodeAddr>();
+  /** In-flight chat turns by addr key, so the human can stop one mid-generation. */
+  const activeTurns = new Map<string, AbortController>();
   const pendingPerms = new Map<string, { resolve: (b: { behavior: "allow" | "deny"; message?: string }) => void }>();
 
   const log = (m: string) => {
@@ -283,6 +285,9 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         if (!(a.node in s.manifest.nodes)) s = await store(a.node);
         const token = randomUUID();
         permTokens.set(token, a);
+        const turnKey = a.item ? `${a.item.foreach}/${a.item.id}:${a.node}` : a.node;
+        const aborter = new AbortController();
+        activeTurns.set(turnKey, aborter);
         try {
           const turn = await api.sendChatMessage(s, a, q("text") ?? "", opts.engines, {
             emit: (ev) => broadcast({ type: "chat", addr: ev.addr, event: ev.event }),
@@ -290,12 +295,22 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
             model: q("model") ?? undefined,
             permissions: (q("permissions") as "ask" | undefined) ?? undefined,
             permission: { url: `http://${host}:${opts.port}`, token },
+            signal: aborter.signal,
           });
+          if (turn.stopped) log(`chat ${a.node}: turn stopped by you — conversation saved`);
           schedulePush();
           return turn;
         } finally {
           permTokens.delete(token);
+          if (activeTurns.get(turnKey) === aborter) activeTurns.delete(turnKey);
         }
+      }
+      case "/api/chat-stop": {
+        const a = addr();
+        const turnKey = a.item ? `${a.item.foreach}/${a.item.id}:${a.node}` : a.node;
+        const aborter = activeTurns.get(turnKey);
+        if (aborter) aborter.abort();
+        return { stopped: !!aborter };
       }
       case "/api/perm/request": {
         // called by the engine's permission prompt; blocks until the human answers in the card
