@@ -555,6 +555,15 @@ Non-negotiable rules (see `DECISIONS.md` D1):
    for `--resume` on reruns and `chat`. Session transcripts under
    `~/.claude/projects/` are **not** parsed: the format is documented as
    unstable. `trace.jsonl` is Flowy's own record.
+6. `--resume` is scoped to a per-cwd bucket under
+   `<config>/projects/<cwd with non-alphanumerics mapped to "-">/`, and every
+   node version runs in its own folder. Before resuming a session created
+   under a *different* cwd (a branch forking its parent's session, a feedback
+   rerun continuing the previous version's), the adapter copies the
+   transcript file into the target cwd's bucket — byte for byte, unparsed,
+   between the user's own local folders. Failed turns never persist the
+   reported session id: the CLI mints one even when no transcript was
+   written, and adopting it would poison every later resume.
 
 Capabilities: `structured_output`, `resume`, `thinking`, `subagent_trace`,
 `cost`.

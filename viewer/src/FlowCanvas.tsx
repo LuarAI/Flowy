@@ -167,8 +167,9 @@ function ChatCard({ data }: NodeProps<CardNode>) {
     const text = draft.trim();
     if (!text || busy) return;
     setBusy(true);
+    // The bubble shows the message now; if the turn fails it comes back below.
+    setDraft("");
     try {
-      // Never clear what the human typed until the turn actually succeeded.
       await post("/api/chat-message", {
         run: runId,
         node: addr.node,
@@ -177,9 +178,18 @@ function ChatCard({ data }: NodeProps<CardNode>) {
         model: model || undefined,
         permissions: stance !== "ask" ? stance : undefined,
       });
-      setDraft("");
     } catch (e) {
-      ctx.onError(`your message is still in the box — ${(e as Error).message}`);
+      // Put the message back in the box — unless the human already typed something new.
+      setDraftRaw((cur) => {
+        const keep = cur.trim() ? cur : text;
+        try {
+          localStorage.setItem(draftKey, keep);
+        } catch {
+          /* storage unavailable */
+        }
+        return keep;
+      });
+      ctx.onError(`your message is back in the box — ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }

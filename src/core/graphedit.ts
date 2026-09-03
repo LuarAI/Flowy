@@ -130,6 +130,15 @@ async function appendToNodesList(wfFile: string, id: string): Promise<void> {
     await writeText(wfFile, text.trimEnd() + `\n\nnodes:\n  - ${id}\n`);
     return;
   }
+  // Flow-style list on one line — `nodes: [a, b]` — gets the id inline;
+  // appending a block item after it would corrupt the YAML.
+  const flow = /^(nodes\s*:\s*)\[([^\]]*)\](.*)$/.exec(lines[idx]);
+  if (flow) {
+    const items = flow[2].trim() ? `${flow[2].trim().replace(/,\s*$/, "")}, ${id}` : id;
+    lines[idx] = `${flow[1]}[${items}]${flow[3]}`;
+    await writeText(wfFile, lines.join("\n"));
+    return;
+  }
   let end = idx + 1;
   while (end < lines.length && (/^\s+/.test(lines[end]) || lines[end].trim() === "")) end++;
   // trim trailing blank lines inside the block

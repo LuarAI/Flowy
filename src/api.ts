@@ -306,7 +306,9 @@ export async function sendChatMessage(
     })(),
   });
   if (result) {
-    result.session_id = er.sessionId ?? resume;
+    // A failed turn reports a session id for a transcript that was never
+    // written; adopting it would poison every later resume of this chat.
+    if (er.exitCode === 0) result.session_id = er.sessionId ?? resume;
     result.cost_usd = (result.cost_usd ?? 0) + (er.costUsd ?? 0);
     if (er.tokens) {
       result.tokens = result.tokens

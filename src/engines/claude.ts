@@ -6,6 +6,44 @@ import { findOnPath, spawnProcess } from "./proc.js";
 import { emptyResult, type Engine, type EngineJob, type EngineResult, type InteractiveJob } from "./types.js";
 
 /**
+ * The CLI keeps each transcript under `<config>/projects/<bucket>/<session>.jsonl`,
+ * where the bucket is the working directory with every non-alphanumeric mapped
+ * to `-`, and `--resume` only looks in the bucket for the *current* cwd.
+ */
+export function sessionBucket(cwd: string): string {
+  return path.resolve(cwd).replace(/[^A-Za-z0-9]/g, "-");
+}
+
+/**
+ * Flowy runs every node version in its own folder, so a branch forking its
+ * parent's session — or a feedback rerun resuming the previous version's —
+ * would find nothing in its own bucket ("No conversation found"). Before such
+ * a resume, copy the transcript file into the target cwd's bucket, byte for
+ * byte. The transcript is the user's own local file moving between their own
+ * local folders; it is never parsed and credentials are never touched (D1).
+ */
+export async function ensureSessionVisible(sessionId: string, cwd: string, env: NodeJS.ProcessEnv): Promise<void> {
+  if (!/^[0-9a-fA-F-]{8,}$/.test(sessionId)) return;
+  try {
+    const os = await import("node:os");
+    const projects = path.join(env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "projects");
+    const target = path.join(projects, sessionBucket(cwd), `${sessionId}.jsonl`);
+    const here = (p: string) => fs.access(p).then(() => true, () => false);
+    if (await here(target)) return;
+    for (const d of await fs.readdir(projects)) {
+      const src = path.join(projects, d, `${sessionId}.jsonl`);
+      if (await here(src)) {
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.copyFile(src, target);
+        return;
+      }
+    }
+  } catch {
+    /* best effort — a resume that still fails shows up in the trace as the CLI's own error */
+  }
+}
+
+/**
  * Claude Code adapter (SPEC §8.1).
  *
  * Rules that must never be relaxed (DECISIONS D1):
@@ -111,6 +149,7 @@ export class ClaudeEngine implements Engine {
     if (job.tools.length) args.push("--allowedTools", job.tools.join(","));
     if (job.schema && !shell) args.push("--json-schema", JSON.stringify(job.schema));
     if (job.resumeSession) {
+      await ensureSessionVisible(job.resumeSession, job.cwd, env);
       args.push("--resume", job.resumeSession);
       if (job.forkSession) args.push("--fork-session");
     }
@@ -192,8 +231,10 @@ export class ClaudeEngine implements Engine {
     // For the interactive session we can afford the shell on Windows (no JSON args).
     const useShell = process.platform === "win32" && !pre.length;
     const args = [...pre];
-    if (job.resumeSession) args.push("--resume", job.resumeSession);
-    else if (job.sessionId) args.push("--session-id", job.sessionId);
+    if (job.resumeSession) {
+      await ensureSessionVisible(job.resumeSession, job.cwd, job.env);
+      args.push("--resume", job.resumeSession);
+    } else if (job.sessionId) args.push("--session-id", job.sessionId);
     for (const d of job.addDirs) args.push("--add-dir", d);
     if (typeof job.config.model === "string" && job.config.model) args.push("--model", job.config.model);
     args.push(`Read ${path.basename(job.promptFile)} in this directory and follow it. Inputs are in ./in, outputs go to ./out.`);

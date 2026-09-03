@@ -73,3 +73,27 @@ describe("graph edits are cascade-resilient (delete always wins)", () => {
     expect(m.nodes.branch.needs).toContain("plan");
   });
 });
+
+describe("addNode adapts to the workflow.yaml list style", () => {
+  it("appends into a flow-style `nodes: [a]` list without corrupting the YAML", async () => {
+    const { addNode } = await import("../src/core/graphedit.js");
+    const dir = await makeWorkflow({
+      "workflow.yaml": "flowy: 0\nname: fl\nengine: { default: mock }\nnodes: [hi]\n",
+      "nodes/hi.md": "---\nid: hi\nmode: chat\n---\n",
+    });
+    await addNode(dir, { id: "twist", mode: "chat", title: "Twist", continues: "hi" });
+    const wf = await fs.readFile(path.join(dir, "workflow.yaml"), "utf8");
+    expect(wf).toContain("nodes: [hi, twist]");
+    const m = await compileWorkflow(dir);
+    expect(Object.keys(m.nodes).sort()).toEqual(["hi", "twist"]);
+    expect(m.nodes.twist.continues).toBe("hi");
+  });
+
+  it("appends into an empty flow list `nodes: []`", async () => {
+    const { addNode } = await import("../src/core/graphedit.js");
+    const dir = await makeWorkflow({ "workflow.yaml": "flowy: 0\nname: fl\nengine: { default: mock }\nnodes: []\n" });
+    await addNode(dir, { id: "solo", mode: "chat", title: "Solo" });
+    const m = await compileWorkflow(dir);
+    expect(Object.keys(m.nodes)).toEqual(["solo"]);
+  });
+});
