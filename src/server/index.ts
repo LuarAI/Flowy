@@ -130,6 +130,12 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
     }
     const runs = await listRuns(dir);
     const store = await loadRun(dir, runId).catch(() => null);
+    // The canvas is live: a lines block or recipe added by hand shows up on the
+    // map without waiting for an action to adopt it into the run.
+    if (store && manifest && !running && JSON.stringify(stripCompiledAt(manifest)) !== JSON.stringify(stripCompiledAt(store.manifest))) {
+      store.manifest = manifest;
+      await fs.writeFile(path.join(store.run.dir, "manifest.json"), JSON.stringify(manifest, null, 2)).catch(() => {});
+    }
     const overview = store ? await api.overview(store) : null;
     // The run's snapshot may still hold deleted steps; only count what still exists.
     if (overview && manifest) {
