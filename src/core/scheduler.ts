@@ -216,6 +216,8 @@ async function foreachDone(store: RunStore, feId: string): Promise<boolean> {
   const fe = store.manifest.foreach[feId];
   const items = await store.listItems(feId);
   if (!items.length) {
+    // Lines depart on demand: nothing downstream runs until at least one line has arrived.
+    if (!fe.source) return false;
     // Expanded with zero items counts as done only if the source has run and been approved.
     const src = await nodeView(store, { node: fe.source.node });
     return src.status === "done" && !(src.gate && !src.approval) && (await exists(path.join(store.run.dir, "items", feId, ".expanded")));
@@ -234,6 +236,7 @@ async function foreachDone(store: RunStore, feId: string): Promise<boolean> {
 async function expandForeaches(store: RunStore, ctx: Parameters<typeof executeNode>[0], log: (m: string) => void): Promise<void> {
   const m = store.manifest;
   for (const fe of Object.values(m.foreach)) {
+    if (!fe.source) continue; // lines are started by the human (flowy depart / the departures sheet)
     const src = await nodeView(store, { node: fe.source.node });
     if (src.status !== "done" || (src.gate && !src.approval)) continue;
     const vdir = await store.currentDir({ node: fe.source.node });

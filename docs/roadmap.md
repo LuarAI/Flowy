@@ -87,6 +87,36 @@ canvas gesture is logged to the serve terminal and the browser console.
 **Open:** foreach blocks can't be *created* from the canvas yet; undo of a
 canvas-mapped action doesn't undo the file edit (git or redraw instead).
 
+## Lines, station recipes, and the map (2026-09-06) ✔
+
+DECISIONS D17. `recipes/<name>.md` = preamble + `## Station` sections with
+`gate: auto | confirm | you` and `expects:`; a `lines:` block in
+`workflow.yaml` turns it into a foreach whose items depart on demand from
+`lists/<id>.yaml` and ride the recipe one station at a time in a single
+conversation (`line.json`, `recipe.json` snapshot per line). `flowy lines`,
+`depart`, `next [--text|--resume]`, `distill --from`. Viewer: the map (trunk,
+junction, lines, stations, glow = needs you), departures board, line pane
+with rail + gate actions, departures sheet with styles, depot with
+distill. Also: chats see inputs wired mid-conversation; chat preambles no
+longer bias the model into writing a file for every reply; the transcript
+stays where you scrolled.
+
+**Open:**
+- Learnings digest: capture mid-line corrections silently, propose
+  recipe amendments at natural pauses (Google-Docs "suggested edits"),
+  promote a correction seen in 2+ runs. Today: re-distill by hand from the
+  depot.
+- "Talk to the recipe": a depot chat that edits `recipes/<name>.md` by
+  conversation and shows the diff in words.
+- Splits drawn on the map (a line that becomes two; an item that becomes
+  three posts) — today a split is just another timetable entry.
+- Timetables fed by a node's array (`from: plan.shorts`) in addition to
+  the YAML list; nested lines inside a line.
+- Semantic zoom (far = lines and glows only); animation of a train
+  sliding one station.
+- Activity-based watchdog for long turns (kill on N quiet minutes, not
+  wall-clock).
+
 ## Viewer backlog (agreed 2026-09, not yet built)
 
 The format stays as is; these are view-layer changes:

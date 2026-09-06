@@ -148,6 +148,39 @@ async function appendToNodesList(wfFile: string, id: string): Promise<void> {
   await writeText(wfFile, lines.join("\n"));
 }
 
+/** Append a lines block (SPEC §5.1) to workflow.yaml: `- lines: <recipe>` with its id and optional trunk. */
+export async function addLinesBlock(dir: string, opts: { id: string; recipe: string; needs?: string[]; list?: string }): Promise<void> {
+  if (!ID_RE.test(opts.id)) throw new Error(`invalid id "${opts.id}"`);
+  const wfFile = path.join(dir, "workflow.yaml");
+  const text = (await readText(wfFile)).replace(/\r\n/g, "\n");
+  const block = [`  - lines: ${opts.recipe}`, `    id: ${opts.id}`];
+  if (opts.needs?.length) block.push(`    needs: [${opts.needs.join(", ")}]`);
+  if (opts.list) block.push(`    list: ${opts.list}`);
+  const lines = text.split("\n");
+  const idx = lines.findIndex((l) => /^nodes\s*:/.test(l));
+  if (idx < 0) {
+    await writeText(wfFile, text.trimEnd() + `\n\nnodes:\n${block.join("\n")}\n`);
+  } else if (/^nodes\s*:\s*\[/.test(lines[idx])) {
+    // a flow-style list can't hold a block entry: rewrite it as a block list
+    const flow = /^nodes\s*:\s*\[([^\]]*)\]\s*(#.*)?$/.exec(lines[idx]);
+    const items = (flow?.[1] ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => `  - ${s}`);
+    lines.splice(idx, 1, "nodes:", ...items, ...block);
+    await writeText(wfFile, lines.join("\n"));
+  } else {
+    let end = idx + 1;
+    while (end < lines.length && (/^\s+/.test(lines[end]) || lines[end].trim() === "")) end++;
+    let insertAt = end;
+    while (insertAt > idx + 1 && lines[insertAt - 1].trim() === "") insertAt--;
+    lines.splice(insertAt, 0, ...block);
+    await writeText(wfFile, lines.join("\n"));
+  }
+  await compileWorkflow(dir);
+}
+
 /**
  * Delete a vertex. Deleting always wins; the workflow adapts (cascade):
  * - a foreach id removes the checklist block (its nested folder stays on disk)
@@ -170,7 +203,7 @@ export async function removeNode(dir: string, id: string): Promise<string> {
 
   // cascade: checklists that read this node's list go with it
   for (const fe of Object.values(m.foreach)) {
-    if (fe.source.node === id) await removeForeachBlock(dir, m, fe.id, did);
+    if (fe.source?.node === id) await removeForeachBlock(dir, m, fe.id, did);
   }
   m = await compileWorkflow(dir);
   for (const other of Object.values(m.nodes)) {
@@ -199,7 +232,7 @@ async function removeForeachBlock(dir: string, m: Awaited<ReturnType<typeof comp
   const wfFile = path.join(dir, "workflow.yaml");
   const lines = (await readText(wfFile)).replace(/\r\n/g, "\n").split("\n");
   for (let i = 0; i < lines.length; i++) {
-    const mFe = /^(\s*)-\s*foreach\s*:/.exec(lines[i]);
+    const mFe = /^(\s*)-\s*(?:foreach|lines)\s*:/.exec(lines[i]);
     if (!mFe) continue;
     let end = i + 1;
     let isThis = false;
@@ -210,7 +243,7 @@ async function removeForeachBlock(dir: string, m: Awaited<ReturnType<typeof comp
     if (isThis) {
       lines.splice(i, end - i);
       await writeText(wfFile, lines.join("\n"));
-      did.push(`removed the checklist "${feId}" (its folder ${path.relative(dir, fe.workflowDir) || "."} stays on disk)`);
+      did.push(fe.source ? `removed the checklist "${feId}" (its folder ${path.relative(dir, fe.workflowDir) || "."} stays on disk)` : `removed the lines "${feId}" (recipes/${fe.recipe}.md stays on disk)`);
       return;
     }
   }

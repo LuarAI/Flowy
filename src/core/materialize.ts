@@ -179,6 +179,41 @@ export async function materialize(
   return { addDirs: [...addDirs], refs, hashes };
 }
 
+/**
+ * Bring a live conversation's in/ up to date: inputs that appeared after the
+ * version was created (a context file wired mid-chat, an upstream that has
+ * since produced something) are added; nothing already there is touched.
+ * Returns the in/-relative paths that arrived.
+ */
+export async function refreshInputs(store: RunStore, spec: NodeSpec, addr: NodeAddr, versionDir: string, tctx: TemplateContext): Promise<string[]> {
+  const sources = await collectInputSources(store, spec, addr, tctx, { lenient: true, warnings: [] });
+  const inDir = path.join(versionDir, "in");
+  const refsFile = path.join(inDir, "_refs.json");
+  const refs = (await readJsonOrNull<Array<{ rel: string; path: string; bytes: number }>>(refsFile)) ?? [];
+  const added: string[] = [];
+  let refsChanged = false;
+  for (const s of sources) {
+    const dest = path.join(inDir, s.rel);
+    if ((await exists(dest)) || refs.some((r) => r.rel === s.rel)) continue;
+    await ensureDir(path.dirname(dest));
+    if (s.abs === null) await writeText(dest, s.content ?? "");
+    else {
+      const st = await fs.stat(s.abs);
+      try {
+        await fs.link(s.abs, dest);
+      } catch {
+        if (st.size > store.manifest.link_threshold) {
+          refs.push({ rel: s.rel, path: s.abs, bytes: st.size });
+          refsChanged = true;
+        } else await fs.copyFile(s.abs, dest);
+      }
+    }
+    added.push(s.rel);
+  }
+  if (refsChanged) await writeJson(refsFile, refs);
+  return added;
+}
+
 /** Hash the sources without materializing — used for stale detection. */
 export async function hashSources(sources: InputSource[], threshold: number): Promise<{ context: Record<string, string>; inputs: Record<string, string> }> {
   const hashes = { context: {} as Record<string, string>, inputs: {} as Record<string, string> };

@@ -19,6 +19,8 @@ Vocabulary used throughout:
 | **version** | one attempt at a node inside a run (`v1`, `v2`, …); the `current` one feeds downstream |
 | **gate** | a node that pauses after producing outputs until a human approves |
 | **item** | one instance of a fan-out (`foreach`) sub-workflow |
+| **recipe** | `recipes/<name>.md`: a sequence of *stations* an agent follows one at a time (§2.6) |
+| **line** | one item of a `lines` block: one conversation riding a recipe from station to station (§5.1) |
 | **engine** | an adapter that runs an agent CLI headlessly |
 | **manifest** | the compiled, frozen execution graph for a run |
 
@@ -35,6 +37,8 @@ my-workflow/
     ...
   context/               # optional: files nodes may read (guidelines, glossaries)
   scripts/               # optional: commands used by script nodes and pre-checks
+  recipes/               # optional: station recipes followed by lines (§2.6)
+  lists/                 # optional: timetables — what may depart on each lines block (§5.1)
   layout.canvas          # optional: JSON Canvas with positions only (§10)
   <sub-workflow>/        # optional: nested workflow folders used by foreach
   runs/                  # runtime state, gitignored (§6)
@@ -75,13 +79,17 @@ nodes:                        # ordered list; order is cosmetic, edges come from
     id: short
     workflow: ./short
     concurrency: 2
+  - lines: shorts             # lines: items ride recipes/shorts.md station by station (§5.1)
+    id: line
+    needs: [transcribe]       # the trunk: runs first, its outputs reach every line
+    concurrency: 2
   - wrap-up
 ```
 
 Rules:
 
 - Every entry in `nodes:` is either a node id (a file `nodes/<id>.md` must
-  exist) or a `foreach` block.
+  exist), a `foreach` block, or a `lines` block.
 - `inputs` types: `string`, `number`, `boolean`, `path`, `list`. `path` inputs
   are resolved to absolute paths at run start and recorded in `run.yaml`.
 - Unknown top-level keys are an error. Unknown keys under `engine.<name>` are
@@ -241,6 +249,95 @@ to match, and refreshes the current version's signature — learning never
 marks a node stale against its own recipe. The trace of the distillation is
 kept as `crystallize.jsonl` in the version directory.
 
+A chat's opening preamble tells the agent to put a file in `./out` only when
+a later step needs it and to answer everything else in chat (a reply is not
+a deliverable). Before every turn, inputs that appeared after the
+conversation started — a context file wired on the canvas, an upstream that
+has since finished — are added to `in/` and the message is prefixed with
+`(new under ./in since we started: …)`. Files already in `in/` are never
+replaced mid-conversation.
+
+### 2.6 Station recipes
+
+A **recipe** is a whole pipeline of one kind of work, written as stations,
+to be followed by a *line* (§5.1) one station at a time. It lives in
+`recipes/<name>.md`:
+
+```markdown
+---
+name: shorts                 # must equal the filename
+title: Shorts                # display name
+version: 3                   # integer; Flowy bumps it when it re-learns the recipe
+context: [context/voice.md]  # optional; files every line sees under in/context/
+tools: [Read, Write, Edit, Bash, Glob, Grep]   # optional; chat default
+model: opus                  # optional engine model for every station
+permissions: ask             # optional chat permission stance
+timeout: 30m                 # optional per-turn limit
+styles:                      # optional named variants ("liveries")
+  default: screen-above-face
+  screen-above-face: Screen recording on top, the face below.
+  fingers-only: No face. Hands and screen only.
+---
+
+Everything before the first `## ` heading is the PREAMBLE: the rules that
+hold at every station, and the preferences (layouts, thresholds, fonts).
+Preferences live here, never inside a station, so they can change without
+touching the spine.
+
+## Hook options
+gate: confirm
+expects: hooks.md
+
+Draft ten hook options … write them to out/hooks.md, then ask which one.
+
+## Record the voice-over
+gate: you
+
+Ask for the recording and where it should be put. Do nothing else.
+
+## Build the draft
+gate: auto
+expects: draft.json
+
+…
+```
+
+Each `## Title` section is a **station**. Lines right after the heading of
+the form `key: value` are its fields; the rest is the instruction:
+
+| Field | Notes |
+|---|---|
+| `id` | optional; defaults to the slugified title; `[a-z0-9-]+`, unique in the recipe |
+| `gate` | `auto` — the next station follows by itself · `confirm` (default) — the human says when · `you` — the human is the worker; the agent asks and waits |
+| `expects` | comma-separated files the station must leave under `out/`; an `auto` station that leaves one missing stops the line with a note instead of advancing |
+| `model` | engine model for this station only |
+
+Semantics that hold for every recipe:
+
+- **Progressive disclosure.** The agent sees the preamble once (when the
+  line departs, together with the item and its style) and then exactly one
+  station at a time. Station *k+1* is never in the context before station
+  *k* is done. The number of stations is known; their contents are not.
+- **A line is one conversation.** Stations are messages in one engine
+  session; `out/` accumulates across stations and is what downstream nodes
+  receive (§5.1).
+- **Talking always wins.** The human can say anything at any station; a
+  message at a `you` station *is* the answer and moves the line on; at any
+  other station it is a normal turn and the train stays put until the human
+  advances it.
+- **Versions.** `version` is set by Flowy. A line snapshots the recipe it
+  departed with (`recipe.json` in its item folder) and finishes on it;
+  editing the file changes the next departures, never a train on the track.
+- **Learning.** `flowy distill <name> --from <chat>…` (or the depot in the
+  viewer) hands finished conversations — the same kind of work done by hand,
+  each time with the human steering — to the engine and asks for the recipe
+  in exactly this format: one station per phase where the human waited or
+  decided, corrections folded in as standing rules, item specifics left
+  out. The result is validated by the same parser, written as
+  `recipes/<name>.md` with the next `version`, and given a `lines` block in
+  `workflow.yaml` unless one already runs it. The scratch directory and
+  trace of a distillation are kept under `runs/<run-id>/distill/`.
+
 **Branches.** `continues: <node>` gives a node the parent's *memory*, not
 just its files: at run time the engine resumes a **fork** of the parent's
 current session. The original session is never appended to, and on a replay
@@ -399,6 +496,62 @@ their allowed tools. That is the whole point.
   keys that disappeared are marked `orphaned` and never run again unless the
   key returns.
 
+### 5.1 Lines
+
+```yaml
+- lines: shorts             # the recipe: recipes/shorts.md (§2.6)
+  id: line                  # this block's id; items live under items/line/
+  needs: [transcribe, plan] # optional trunk: top-level vertices every line waits for and reads
+  list: lists/line.yaml     # optional timetable path (default lists/<id>.yaml)
+  concurrency: 2            # lines driven at once when several depart together
+```
+
+A lines block is a fan-out whose items **depart on demand** instead of
+expanding from a node's array, and whose per-item work is one conversation
+following the recipe's stations. The compiler turns it into a foreach with
+`source: null`, `recipe`, `list`, and a single synthesized chat node
+`<id>-line` (title, context, tools, model, permissions and timeout from the
+recipe; `needs` = the trunk; `cache: never`). The trunk's outputs reach every
+line as `in/<trunk-id>/…`; a node downstream of the block (`needs: [line]`)
+receives `in/line/<item-id>/<id>-line/…` for every line that has arrived,
+and runs only when at least one line exists and none is still on the track.
+
+**Timetable.** `lists/<id>.yaml` is a YAML list of entries — a string, or a
+mapping with `id` (optional; slug of the title), `title`, `brief` (one line
+of identity) and any extra fields, which ride into the item. It is
+hand-editable and also grown from the departures sheet.
+
+**Departing.** `flowy depart <id> <entry>… [--style s]` (or the sheet)
+creates the item (`item.json` = the entry plus `_index` and `_style`),
+snapshots the recipe to `recipe.json`, writes `line.json` and drives the
+line: the first turn carries the departure preamble, the item, the style
+and station 1; then each station in turn until a gate needs the human.
+
+**`line.json`** — where the train is:
+
+```json
+{ "recipe": "shorts", "version": 3, "style": "fingers-only",
+  "step": 2, "state": "waiting", "note": null,
+  "started": "…", "updated": "…", "waitingSince": "…",
+  "history": [{ "step": 0, "id": "hooks", "started": "…", "ended": "…" }] }
+```
+
+`state` ∈ `pending`, `running` (a station's turn is in flight), `waiting`
+(a `confirm`/`you` gate; or an `auto` station that left an expected file
+missing, or a stopped/interrupted/failed station — `note` says which),
+`done`, `failed`. `flowy next <id>/<item> [--text …]` moves a waiting line
+to its next station, carrying the human's words as "The human says: …";
+`--resume` reruns the current station from its prompt. On the viewer's
+chat endpoint, a message to a line waiting at a `you` station is that
+station's answer (the line advances with it); at any other station it is a
+normal turn. Stopping a station's turn keeps the work and leaves the line
+`waiting` with a note. When the runner restarts, lines left `running` by a
+dead process become `waiting` with an "interrupted" note.
+
+When the last station ends, the line's conversation is marked `done` (its
+`out/` becomes the item's outputs) and the item is `done`. Parking a line
+is `flowy skip <id>/<item>`, as for any item.
+
 ---
 
 ## 6. Runs, versions, and cache
@@ -415,6 +568,10 @@ runs/<run-id>/
   items/<foreach-id>/<item-id>/
     nodes/<id>/…
     status          # pending | running | done | skipped | orphaned
+    item.json       # the element (foreach) or the timetable entry (lines)
+    line.json       # lines only: where the train is (§5.1)
+    recipe.json     # lines only: the recipe this line departed with
+  distill/<name>-<time>/   # scratch dirs of recipe distillations (§2.6)
 ```
 
 `run-id` defaults to `<UTC date>_<short random>` and can be set with
@@ -657,6 +814,10 @@ at the start of each run):
   foreach internals,
 - checks that every `foreach` source names a node with a schema or a
   declared `*.json` output,
+- for every `lines` block: parses `recipes/<name>.md` (name equals the
+  filename, ≥ 1 station, known fields and gates, existing `context` paths),
+  checks the trunk names top-level vertices, and synthesizes the
+  `<id>-line` node; the manifest carries the parsed recipes,
 - checks `lock` names, `engine` names, `context` paths (must exist or be a
   template), `before` commands (must be non-empty strings),
 - checks that gate nodes declare at least one `approve` field,
@@ -683,6 +844,10 @@ flowy use <node> <version>
 flowy chat <node> [--item ...]
 flowy recipe <node> [--item ...]          distill the conversation into the recipe (§2.5)
 flowy done <node> [--item ...]            mark a wait/chat node complete
+flowy lines [dir]                         where every line is (§5.1)
+flowy depart <lines-id> <entry>... [--style s]   start lines from the timetable
+flowy next <lines-id>/<item> [--text "..."] [--resume]   move a line on (or rerun its station)
+flowy distill <name> --from <node>...     learn recipes/<name>.md from conversations (§2.6)
 flowy skip <foreach>/<item-id> [--undo]
 flowy stop [dir]
 flowy trace <node> [--version vN] [--raw]
@@ -712,6 +877,19 @@ A local web server plus browser page. Read-mostly in v1:
 - buttons map 1:1 to CLI commands (approve, rerun with feedback, use version,
   skip item, chat, run-until-here). The viewer never has abilities the CLI
   lacks.
+
+The **map** ("live service") is the viewer's second face, and the default
+once a workflow has lines: one trunk per lines block, a junction, one
+colored line per departed item with the recipe's stations, the train at
+its current station, and a glow only where a human is the worker. Above it
+the departures board lists what needs the human, longest wait first (line
+gates and trunk gates alike). Clicking a train opens the line's
+conversation beside the map with a rail strip and the gate's action; the
+junction opens the departures sheet (timetable, styles, start); the depot
+shows the recipe and learns a new version from chosen conversations.
+Arrived and parked lines move to "past service". Nothing on the map is
+dragged or arranged: the geometry comes from the files. The canvas remains
+the workshop where conversations are born.
 
 The viewer binds to localhost only and has no authentication. It is a window
 onto local files, not a service.

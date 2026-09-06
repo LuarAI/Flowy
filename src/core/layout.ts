@@ -69,6 +69,7 @@ function layers(manifest: Manifest): Map<string, number> {
 function nodeText(manifest: Manifest, id: string): string {
   if (id in manifest.foreach) {
     const fe = manifest.foreach[id];
+    if (!fe.source) return `${id}\nlines · recipe ${fe.recipe}`;
     return `${id}\nforeach ${fe.source.node}.${fe.source.key}: ${fe.nodes.join(" → ")}`;
   }
   const n = manifest.nodes[id];

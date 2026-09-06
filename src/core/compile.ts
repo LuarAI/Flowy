@@ -2,6 +2,7 @@ import path from "node:path";
 import YAML from "yaml";
 import { exists, isDir, nowIso, parseDuration, readText } from "./fsutil.js";
 import { parseFrontmatter, FrontmatterError } from "./frontmatter.js";
+import { parseRecipe } from "./recipe.js";
 import { findTemplates } from "./template.js";
 import type {
   ApproveField,
@@ -12,6 +13,7 @@ import type {
   Manifest,
   NodeMode,
   NodeSpec,
+  RecipeSpec,
 } from "./types.js";
 
 export interface CompileIssue {
@@ -69,12 +71,22 @@ const WORKFLOW_KEYS = new Set([
   "nodes",
 ]);
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** A chat is a working conversation: it gets real tools by default. */
+export const CHAT_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep"];
 
 interface RawForeach {
   foreach: string;
   id: string;
   workflow: string;
   key?: string;
+  concurrency?: number;
+}
+
+interface RawLines {
+  lines: string;
+  id: string;
+  list?: string;
+  needs?: string[];
   concurrency?: number;
 }
 
@@ -156,6 +168,7 @@ export async function compileWorkflow(dir: string, opts: CompileOptions = {}): P
 
   const nodes: Record<string, NodeSpec> = {};
   const foreach: Record<string, ForeachSpec> = {};
+  const recipes: Record<string, RecipeSpec> = {};
   const top: string[] = [];
   const ids = new Set<string>();
 
@@ -203,8 +216,95 @@ export async function compileWorkflow(dir: string, opts: CompileOptions = {}): P
         concurrency: intOr(fe.concurrency, 2),
         nodes: nestedIds,
         needs: [],
+        recipe: null,
+        list: null,
       };
       top.push(fe.id);
+    } else if (entry && typeof entry === "object" && "lines" in (entry as object)) {
+      // A lines block (SPEC §5.1): items depart on demand from a timetable and
+      // each follows the recipe's stations in one conversation.
+      const ln = entry as RawLines;
+      if (typeof ln.id !== "string" || !ID_RE.test(ln.id)) {
+        issues.push({ file: rel(wfFile), message: `lines entry needs an id matching ${ID_RE}` });
+        continue;
+      }
+      if (typeof ln.lines !== "string" || !ID_RE.test(ln.lines)) {
+        issues.push({ file: rel(wfFile), message: `lines "${ln.id}": lines: must name a recipe (recipes/<name>.md)` });
+        continue;
+      }
+      const rfile = path.join(root, "recipes", `${ln.lines}.md`);
+      if (!(await exists(rfile))) {
+        issues.push({ file: rel(wfFile), message: `lines "${ln.id}": recipe not found: recipes/${ln.lines}.md` });
+        continue;
+      }
+      let recipe: RecipeSpec;
+      try {
+        recipe = parseRecipe(await readText(rfile), rfile);
+      } catch (e) {
+        issues.push({ file: rel(rfile), message: (e as Error).message });
+        continue;
+      }
+      if (recipe.name !== ln.lines) issues.push({ file: rel(rfile), message: `name: "${recipe.name}" must equal the filename ("${ln.lines}")` });
+      claim(ln.id, rel(wfFile));
+      recipes[ln.lines] = recipe;
+      for (const c of recipe.context) if (!c.includes("{{") && !(await exists(path.resolve(root, c)))) issues.push({ file: rel(rfile), message: `context path not found: ${c}` });
+      const timeout = recipe.timeout ?? "30m";
+      let timeoutMs = 0;
+      try {
+        timeoutMs = parseDuration(timeout);
+      } catch {
+        issues.push({ file: rel(rfile), message: `invalid timeout "${timeout}"` });
+      }
+      const needs: string[] = [];
+      if (ln.needs !== undefined) {
+        if (!Array.isArray(ln.needs) || !ln.needs.every((x) => typeof x === "string")) issues.push({ file: rel(wfFile), message: `lines "${ln.id}": needs must be a list of node ids` });
+        else needs.push(...(ln.needs as string[]));
+      }
+      const nodeId = `${ln.id}-line`;
+      claim(nodeId, rel(rfile));
+      nodes[nodeId] = {
+        id: nodeId,
+        title: recipe.title,
+        mode: "chat",
+        // the trunk's outputs reach every line as in/<id>/
+        needs: [...needs],
+        context: recipe.context,
+        tools: recipe.tools ?? CHAT_TOOLS,
+        outputs: [],
+        schema: null,
+        approve: null,
+        lock: null,
+        timeout,
+        timeoutMs,
+        // a line is a conversation: it never goes "stale" against its inputs
+        cache: "never",
+        before: [],
+        engine: null,
+        model: recipe.model,
+        effort: null,
+        recipe: false,
+        continues: null,
+        permissions: recipe.permissions ?? "ask",
+        run: null,
+        hint: null,
+        recipeRef: recipe.name,
+        body: "",
+        file: rfile,
+        workflowDir: root,
+        foreach: ln.id,
+      };
+      foreach[ln.id] = {
+        id: ln.id,
+        source: null,
+        workflowDir: root,
+        key: null,
+        concurrency: intOr(ln.concurrency, 2),
+        nodes: [nodeId],
+        needs,
+        recipe: ln.lines,
+        list: path.resolve(root, typeof ln.list === "string" && ln.list ? ln.list : `lists/${ln.id}.yaml`),
+      };
+      top.push(ln.id);
     } else {
       issues.push({ file: rel(wfFile), message: `nodes: entry must be a node id or a foreach block (got ${JSON.stringify(entry)})` });
     }
@@ -215,6 +315,7 @@ export async function compileWorkflow(dir: string, opts: CompileOptions = {}): P
   const edges: Edge[] = [];
 
   for (const spec of Object.values(nodes)) {
+    if (spec.recipeRef) continue; // synthesized from a lines block; its trunk is validated with the block
     const file = rel(spec.file);
     if (spec.engine && !engines.includes(spec.engine)) issues.push({ file, message: `engine "${spec.engine}" is not one of ${engines.join(", ")}` });
     if (spec.continues) {
@@ -254,13 +355,21 @@ export async function compileWorkflow(dir: string, opts: CompileOptions = {}): P
   }
 
   for (const fe of Object.values(foreach)) {
-    const src = nodes[fe.source.node];
-    if (!src || src.foreach) {
-      issues.push({ file: rel(wfFile), message: `foreach "${fe.id}": source node "${fe.source.node}" is not a top-level node` });
+    if (fe.source) {
+      const src = nodes[fe.source.node];
+      if (!src || src.foreach) {
+        issues.push({ file: rel(wfFile), message: `foreach "${fe.id}": source node "${fe.source.node}" is not a top-level node` });
+      } else {
+        const hasJson = src.outputs.includes(`${fe.source.key}.json`) || src.outputs.includes("structured.json");
+        if (!src.schema && !hasJson) issues.push({ file: rel(src.file), message: `foreach "${fe.id}" reads "${fe.source.key}" but this node has neither schema: nor an output named ${fe.source.key}.json` });
+        if (!fe.needs.includes(fe.source.node)) fe.needs.unshift(fe.source.node);
+      }
     } else {
-      const hasJson = src.outputs.includes(`${fe.source.key}.json`) || src.outputs.includes("structured.json");
-      if (!src.schema && !hasJson) issues.push({ file: rel(src.file), message: `foreach "${fe.id}" reads "${fe.source.key}" but this node has neither schema: nor an output named ${fe.source.key}.json` });
-      if (!fe.needs.includes(fe.source.node)) fe.needs.unshift(fe.source.node);
+      // lines: `needs:` names the trunk — top-level vertices that run before any line departs
+      for (const dep of fe.needs) {
+        if (dep === fe.id) issues.push({ file: rel(wfFile), message: `lines "${fe.id}": needs itself` });
+        else if (!topSet.has(dep)) issues.push({ file: rel(wfFile), message: `lines "${fe.id}": needs "${dep}": ${dep in nodes ? "that node is inside a checklist" : "unknown node"}` });
+      }
     }
     for (const dep of fe.needs) edges.push({ from: dep, to: fe.id });
   }
@@ -294,6 +403,7 @@ export async function compileWorkflow(dir: string, opts: CompileOptions = {}): P
     locks,
     nodes,
     foreach,
+    recipes,
     top,
     edges,
   };
@@ -385,8 +495,7 @@ async function loadNode(
 
   const needs = strList("needs", []);
   const context = strList("context", []);
-  // A chat is a working conversation: it gets real tools by default.
-  const tools = strList("tools", mode === "chat" ? ["Read", "Write", "Edit", "Bash", "Glob", "Grep"] : ["Read", "Write"]);
+  const tools = strList("tools", mode === "chat" ? CHAT_TOOLS : ["Read", "Write"]);
   const outputs = strList("outputs", []);
   // Chats may be open-ended (no declared outputs); every other mode must produce files.
   if (outputs.length === 0 && mode !== "chat") push("outputs", "outputs: must declare at least one file");
@@ -485,6 +594,7 @@ async function loadNode(
     permissions: permissions as NodeSpec["permissions"],
     run,
     hint,
+    recipeRef: null,
     body: fm.body,
     file,
     workflowDir: wfDir,

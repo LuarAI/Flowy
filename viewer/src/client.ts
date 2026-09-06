@@ -14,6 +14,7 @@ export interface NodeResult {
   cost_usd: number | null;
   tokens: { input: number; output: number; cache_read: number } | null;
   session_id: string | null;
+  turns?: number | null;
   outputs: Record<string, { bytes: number; sha256: string }>;
   error: string | null;
   engine: string | null;
@@ -74,11 +75,77 @@ export interface Manifest {
   name: string;
   description: string;
   inputs: Record<string, { type: string; required?: boolean; default?: unknown; description?: string }>;
-  nodes: Record<string, { id: string; mode: string; needs: string[]; approve: unknown; lock: string | null; foreach: string | null; outputs: string[]; title: string; context?: string[]; recipe?: boolean; continues?: string | null }>;
-  foreach: Record<string, { id: string; source: { node: string; key: string }; nodes: string[]; needs: string[] }>;
+  nodes: Record<string, { id: string; mode: string; needs: string[]; approve: unknown; lock: string | null; foreach: string | null; outputs: string[]; title: string; context?: string[]; recipe?: boolean; continues?: string | null; recipeRef?: string | null }>;
+  foreach: Record<string, { id: string; source: { node: string; key: string } | null; nodes: string[]; needs: string[]; recipe: string | null; list: string | null; concurrency?: number }>;
+  recipes: Record<string, RecipeSpec>;
   top: string[];
   edges: Array<{ from: string; to: string }>;
   concurrency: number;
+}
+
+export interface RecipeStep {
+  id: string;
+  title: string;
+  gate: "auto" | "confirm" | "you";
+  expects: string[];
+  model: string | null;
+  body: string;
+}
+
+export interface RecipeSpec {
+  name: string;
+  title: string;
+  version: number;
+  file: string;
+  preamble: string;
+  steps: RecipeStep[];
+  styles: Record<string, string>;
+  defaultStyle: string | null;
+  context: string[];
+  tools: string[] | null;
+  model: string | null;
+  permissions: string | null;
+  timeout: string | null;
+}
+
+export interface LineState {
+  recipe: string;
+  version: number;
+  style: string | null;
+  step: number;
+  state: "pending" | "running" | "waiting" | "done" | "failed";
+  note: string | null;
+  started: string;
+  updated: string;
+  waitingSince: string | null;
+  history: Array<{ step: number; id: string; started: string; ended: string | null }>;
+}
+
+export interface LineView {
+  foreach: string;
+  item: string;
+  addr: NodeAddr;
+  title: string;
+  brief: string;
+  line: LineState;
+  /** The recipe this line departed with (from the run's frozen manifest). */
+  steps: Array<{ id: string; title: string; gate: string }>;
+  gate: "auto" | "confirm" | "you" | null;
+  cost: number;
+  live: boolean;
+  parked: boolean;
+}
+
+export interface LinesView {
+  id: string;
+  recipe: RecipeSpec;
+  /** Recipe version the live workflow files carry (may be newer than what running lines follow). */
+  liveVersion: number;
+  timetable: Array<{ id: string; title: string; brief: string; started: boolean }>;
+  timetableError: string | null;
+  listFile: string;
+  needs: string[];
+  lines: LineView[];
 }
 
 export interface Canvas {
@@ -94,6 +161,7 @@ export interface State {
   layout: Canvas | null;
   runs: string[];
   overview: Overview | null;
+  lines: LinesView[];
   running: string | null;
   undo: number;
   logs: string[];

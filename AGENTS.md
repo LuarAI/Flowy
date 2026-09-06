@@ -116,6 +116,70 @@ the scripts don't exist yet, and their guideline documents become
     unknown ids, cycles, missing outputs, bad locks, and gate nodes without
     `approve` fields, with file and line.
 
+## Recipes and lines (repeated work)
+
+When the human does the *same kind* of work again and again (one short per
+recording, one post per idea), do not write one node per step. Write a
+**recipe** and give it a **lines** block (SPEC §2.6, §5.1):
+
+```markdown
+# recipes/shorts.md
+---
+name: shorts            # equals the filename
+title: Shorts
+version: 1              # Flowy bumps this; never edit it by hand
+context: [context/voice.md]
+styles:                 # optional variants the human can pick per line
+  default: screen-above
+  screen-above: Screen recording on top, face below.
+---
+
+Rules that hold at every station, and the human's preferences.
+
+## Hook options
+gate: confirm
+expects: hooks.md
+
+Draft ten hooks … write out/hooks.md, then ask which one.
+
+## Record the voice-over
+gate: you
+
+Ask for the m4a and where to put it. Do nothing else.
+
+## Build the draft
+gate: auto
+expects: draft.json
+
+…
+```
+
+```yaml
+# workflow.yaml
+nodes:
+  - transcribe
+  - lines: shorts
+    id: short
+    needs: [transcribe]     # the trunk: every line reads in/transcribe/
+```
+
+and a timetable `lists/short.yaml` (`- title: …` with an optional `brief:`).
+The human starts lines with `flowy depart short <entry>` or the viewer's
+departures sheet. Rules:
+
+- One station per phase where the human waited or decided. `you` where the
+  human is the worker; `confirm` where they review and choose; `auto` where
+  they never intervened. The agent following the recipe sees one station
+  at a time, so each station must say what to read and what to leave in
+  `out/` on its own.
+- Preferences (layouts, thresholds, fonts) go in the preamble, never in a
+  station. Item specifics never go anywhere: describe the kind of thing.
+- Prefer learning over authoring: if finished conversations exist,
+  `flowy distill <name> --from <node>…` writes the recipe from them and
+  adds the lines block. Edit the result only where it is wrong.
+- Do not edit `runs/<run>/items/…/line.json` or `recipe.json`; `flowy next`
+  and `flowy next --resume` are how a line moves.
+
 ## Prompt-writing rules for `agent` nodes
 
 - First line: what the node is for, in one sentence.

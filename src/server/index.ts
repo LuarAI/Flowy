@@ -10,7 +10,7 @@ import { CompileError, compileWorkflow } from "../core/compile.js";
 import { exists, readJsonOrNull } from "../core/fsutil.js";
 import { addContext, addEdge, addNode, removeContext, removeEdge, removeNode, updateNode } from "../core/graphedit.js";
 import { ensureLayout, readLayout, updatePositions } from "../core/layout.js";
-import { listRuns, loadRun } from "../core/runstore.js";
+import { addrKey, listRuns, loadRun } from "../core/runstore.js";
 import type { EngineRegistry } from "../engines/index.js";
 import type { Manifest, NodeAddr } from "../core/types.js";
 
@@ -47,6 +47,38 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
     const s = JSON.stringify(msg);
     for (const c of clients) if (c.readyState === c.OPEN) c.send(s);
   };
+
+  /** Per-turn plumbing shared by chat messages and line stations: a stop handle and the permission bridge. */
+  const beginTurn = (a: NodeAddr) => {
+    const token = randomUUID();
+    permTokens.set(token, a);
+    const key = addrKey(a);
+    const aborter = new AbortController();
+    activeTurns.set(key, aborter);
+    return {
+      signal: aborter.signal,
+      permission: { url: `http://${host}:${opts.port}`, token },
+      done: () => {
+        permTokens.delete(token);
+        if (activeTurns.get(key) === aborter) activeTurns.delete(key);
+      },
+    };
+  };
+  const lineOpts = (): api.LineOptions => ({
+    engines: opts.engines,
+    log,
+    emit: (ev) => broadcast({ type: "chat", addr: ev.addr, event: ev.event }),
+    onLine: (foreach, item, line) => {
+      broadcast({ type: "line", foreach, item, line });
+      schedulePush();
+    },
+    turnContext: beginTurn,
+  });
+
+  // A previous process may have died mid-station; those lines are not running any more.
+  void loadRun(dir)
+    .then((s) => s && api.reconcileLines(s, () => false))
+    .catch(() => {});
 
   // ---- undo snapshots of the authoring files (canvas edits only) ----------
   const undoDir = path.join(dir, ".flowy", "undo");
@@ -104,6 +136,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
       overview.pending = overview.pending.filter((p) => p.addr.node in manifest!.nodes && (!p.addr.item || p.addr.item.foreach in manifest!.foreach));
     }
     const layout = await readLayout(dir);
+    const lines = store ? await api.linesOverview(store, { live: (a) => activeTurns.has(addrKey(a)), liveRecipes: manifest?.recipes }).catch(() => []) : [];
     return {
       dir,
       manifest: manifest ?? store?.manifest ?? null,
@@ -112,6 +145,7 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
       layout,
       runs,
       overview,
+      lines,
       running: running ? running.runId : null,
       undo: await undoCount(),
       logs: logs.slice(-200),
@@ -164,15 +198,14 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
     };
     const store = async (needNode?: string) => {
       const s = await api.getStore(dir, q("run") ?? undefined);
-      // The run's snapshot may predate a node created on the canvas (a fresh
-      // branch, a new chat): adopt the live workflow so talking to it just works.
-      if (needNode && !(needNode in s.manifest.nodes) && !(needNode in s.manifest.foreach)) {
-        const live = await compileWorkflow(dir, { engines: opts.engines.names() }).catch(() => null);
-        if (live && (needNode in live.nodes || needNode in live.foreach)) {
-          s.manifest = live;
-          await fs.writeFile(path.join(s.run.dir, "manifest.json"), JSON.stringify(live, null, 2));
-          log(`run ${s.run.id} picked up the new node "${needNode}"`);
-        }
+      // The canvas is live: a node created, a context file wired, a recipe
+      // edited — the run adopts the workflow as it is now, whenever it
+      // compiles. (Lines already on the track keep their own recipe snapshot.)
+      const live = await compileWorkflow(dir, { engines: opts.engines.names() }).catch(() => null);
+      if (live && JSON.stringify(stripCompiledAt(live)) !== JSON.stringify(stripCompiledAt(s.manifest))) {
+        s.manifest = live;
+        await fs.writeFile(path.join(s.run.dir, "manifest.json"), JSON.stringify(live, null, 2));
+        if (needNode) log(`run ${s.run.id} picked up the workflow as it is now (${needNode})`);
       }
       return s;
     };
@@ -283,34 +316,103 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         let s = ensured.store;
         const a = addr();
         if (!(a.node in s.manifest.nodes)) s = await store(a.node);
-        const token = randomUUID();
-        permTokens.set(token, a);
-        const turnKey = a.item ? `${a.item.foreach}/${a.item.id}:${a.node}` : a.node;
-        const aborter = new AbortController();
-        activeTurns.set(turnKey, aborter);
+        const text = q("text") ?? "";
+        // A line waiting at a "you" station: what the human says IS the answer — the train departs with it.
+        if (a.item && s.manifest.nodes[a.node]?.recipeRef) {
+          const { readLine, lineRecipe } = await import("../core/lines.js");
+          const ls = await readLine(s, a.item.foreach, a.item.id);
+          if (ls && ls.state === "waiting" && (await lineRecipe(s, a.item.foreach, a.item.id)).steps[ls.step]?.gate === "you") {
+            const line = await api.lineNext(s, a.item.foreach, a.item.id, lineOpts(), text);
+            schedulePush();
+            return { line };
+          }
+        }
+        const tc = beginTurn(a);
         try {
-          const turn = await api.sendChatMessage(s, a, q("text") ?? "", opts.engines, {
+          const turn = await api.sendChatMessage(s, a, text, opts.engines, {
             emit: (ev) => broadcast({ type: "chat", addr: ev.addr, event: ev.event }),
             log,
             model: q("model") ?? undefined,
             permissions: (q("permissions") as "ask" | undefined) ?? undefined,
-            permission: { url: `http://${host}:${opts.port}`, token },
-            signal: aborter.signal,
+            permission: tc.permission,
+            signal: tc.signal,
           });
           if (turn.stopped) log(`chat ${a.node}: turn stopped by you — conversation saved`);
           schedulePush();
           return turn;
         } finally {
-          permTokens.delete(token);
-          if (activeTurns.get(turnKey) === aborter) activeTurns.delete(turnKey);
+          tc.done();
         }
       }
       case "/api/chat-stop": {
-        const a = addr();
-        const turnKey = a.item ? `${a.item.foreach}/${a.item.id}:${a.node}` : a.node;
-        const aborter = activeTurns.get(turnKey);
+        const aborter = activeTurns.get(addrKey(addr()));
         if (aborter) aborter.abort();
         return { stopped: !!aborter };
+      }
+      case "/api/lines": {
+        const s = await store();
+        return api.linesOverview(s, { live: (a) => activeTurns.has(addrKey(a)) });
+      }
+      case "/api/depart": {
+        const ensured = await api.ensureStore(dir, q("run") ?? undefined, opts.engines);
+        if (ensured.created) log(`started run ${ensured.store.run.id} (first departure)`);
+        let s = ensured.store;
+        const fe = q("foreach")!;
+        if (!(fe in s.manifest.foreach)) s = await store(fe);
+        const picks = Array.isArray(body.picks) ? (body.picks as Array<{ id: string; style?: string | null }>) : [];
+        if (!picks.length) throw new Error("pick at least one entry");
+        // Validate now (unknown entries, styles) so the sheet hears about it; the stations run in the background.
+        const { readTimetable } = await import("../core/recipe.js");
+        const tt = await readTimetable(s.manifest.foreach[fe].list!);
+        for (const p of picks) if (!tt.some((e) => e.id === p.id)) throw new Error(`"${p.id}" is not on the timetable`);
+        log(`▶ ${fe}: ${picks.length} line${picks.length === 1 ? "" : "s"} departing — ${picks.map((p) => p.id).join(", ")}`);
+        void api
+          .depart(s, fe, picks, lineOpts())
+          .catch((e) => log(`depart failed: ${(e as Error).message}`))
+          .finally(schedulePush);
+        return { started: picks.length, run: s.run.id };
+      }
+      case "/api/line-next": {
+        const s = await store();
+        const fe = q("foreach")!;
+        const item = q("item")!;
+        const text = q("text") ?? null;
+        void api
+          .lineNext(s, fe, item, lineOpts(), text)
+          .catch((e) => log(`${fe}/${item}: ${(e as Error).message}`))
+          .finally(schedulePush);
+        return { ok: true };
+      }
+      case "/api/line-resume": {
+        const s = await store();
+        const fe = q("foreach")!;
+        const item = q("item")!;
+        void api
+          .lineResume(s, fe, item, lineOpts())
+          .catch((e) => log(`${fe}/${item}: ${(e as Error).message}`))
+          .finally(schedulePush);
+        return { ok: true };
+      }
+      case "/api/timetable-add": {
+        const ensured = await api.ensureStore(dir, q("run") ?? undefined, opts.engines);
+        let s = ensured.store;
+        const fe = q("foreach")!;
+        if (!(fe in s.manifest.foreach)) s = await store(fe);
+        const entry = await api.addTimetableEntry(s, fe, { title: q("title") ?? "", brief: q("brief") ?? "" });
+        log(`timetable ${fe}: added "${entry.title}"`);
+        schedulePush();
+        return entry;
+      }
+      case "/api/distill": {
+        const s = await store();
+        const name = q("name") ?? "";
+        const chats = (Array.isArray(body.chats) ? (body.chats as Array<{ node: string; item?: string }>) : []).map((c) =>
+          c.item ? { node: c.node, item: { foreach: c.item.split("/")[0], id: c.item.split("/").slice(1).join("/") } } : { node: c.node },
+        );
+        log(`✎ distilling recipe "${name}" from ${chats.map((c) => c.node).join(", ")}…`);
+        const r = await api.distill(s, name, chats, opts.engines, { log, model: q("model") ?? undefined });
+        schedulePush();
+        return { file: r.file, version: r.recipe.version, stations: r.recipe.steps.map((st) => st.title), linesId: r.linesId };
       }
       case "/api/perm/request": {
         // called by the engine's permission prompt; blocks until the human answers in the card

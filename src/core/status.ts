@@ -238,7 +238,7 @@ export async function runOverview(store: RunStore, opts: { checkStale?: boolean 
         }
         views.push({ id: it.id, state: it.state, item: it.item, nodes: nv, cost: icost });
       }
-      foreach.push({ id, source: `${fe.source.node}.${fe.source.key}`, expanded: items.length > 0, items: views, needs: fe.needs, nodes: fe.nodes });
+      foreach.push({ id, source: fe.source ? `${fe.source.node}.${fe.source.key}` : `recipe ${fe.recipe}`, expanded: items.length > 0, items: views, needs: fe.needs, nodes: fe.nodes });
     } else {
       const v = await nodeView(store, { node: id }, opts);
       nodes.push(v);

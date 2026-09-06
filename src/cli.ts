@@ -210,6 +210,97 @@ program
   });
 
 program
+  .command("lines [dir]")
+  .description("where every line is: timetable, stations, who needs you (SPEC §5.1)")
+  .option("-r, --run <id>")
+  .action(async (dir = ".", o: { run?: string }) => {
+    try {
+      const store = await api.getStore(path.resolve(dir), o.run);
+      const all = await api.linesOverview(store);
+      if (!all.length) out("(no lines blocks in this workflow)");
+      for (const lv of all) {
+        out(`${lv.id}  recipe ${lv.recipe.name} v${lv.recipe.version}  stations: ${lv.recipe.steps.map((s) => s.id).join(" → ")}`);
+        for (const l of lv.lines) {
+          const st = l.steps[l.line.step];
+          const where = l.line.state === "done" ? "arrived" : `${l.line.step + 1}/${l.steps.length} ${st?.id ?? ""}`;
+          const needs = l.line.state === "waiting" ? (l.line.note ? `  ← ${l.line.note}` : l.gate === "you" ? "  ← your station: answer it with `flowy next` --text" : "  ← waiting for your go: flowy next") : "";
+          out(`  [${l.line.state.padEnd(7)}] ${l.item.padEnd(22)} ${where}${l.line.style ? `  (${l.line.style})` : ""}${needs}`);
+        }
+        const waiting = lv.timetable.filter((t) => !t.started);
+        if (waiting.length) out(`  on the timetable, not departed: ${waiting.map((t) => t.id).join(", ")}`);
+      }
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+program
+  .command("depart <lines-id> <entries...>")
+  .description("start lines for timetable entries and drive each to its first gate")
+  .option("-d, --dir <dir>", "workflow folder", ".")
+  .option("-r, --run <id>")
+  .option("-s, --style <name>", "a style declared by the recipe")
+  .action(async (feId: string, entries: string[], o: { dir: string; run?: string; style?: string }) => {
+    try {
+      const { store, created } = await api.ensureStore(path.resolve(o.dir), o.run, engines);
+      if (created) out(`started run ${store.run.id}`);
+      const ac = abortOnSigint();
+      const results = await api.depart(
+        store,
+        feId,
+        entries.map((id) => ({ id, style: o.style ?? null })),
+        { engines, log: out, turnContext: () => ({ signal: ac.signal, done: () => {} }) },
+      );
+      for (const [i, ls] of results.entries()) out(`${entries[i]}: ${ls.state} at station ${ls.step + 1}${ls.note ? ` — ${ls.note}` : ""}`);
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+program
+  .command("next <lines-id/item>")
+  .description("move a line to its next station (answering a confirm/you gate); --resume reruns the current one instead")
+  .option("-d, --dir <dir>", "workflow folder", ".")
+  .option("-r, --run <id>")
+  .option("-t, --text <text>", "what you say to it (a you-station's answer, e.g. where the file is)")
+  .option("--resume", "run the current station again (after a stop, a failure, or a restart)")
+  .action(async (target: string, o: { dir: string; run?: string; text?: string; resume?: boolean }) => {
+    try {
+      const store = await api.getStore(path.resolve(o.dir), o.run);
+      const a = parseAddr("x", target);
+      const ac = abortOnSigint();
+      const lo = { engines, log: out, turnContext: () => ({ signal: ac.signal, done: () => {} }) };
+      const ls = o.resume ? await api.lineResume(store, a.item!.foreach, a.item!.id, lo) : await api.lineNext(store, a.item!.foreach, a.item!.id, lo, o.text ?? null);
+      out(`${target}: ${ls.state}${ls.state === "done" ? " — arrived" : ` at station ${ls.step + 1}`}${ls.note ? ` — ${ls.note}` : ""}`);
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+program
+  .command("distill <name>")
+  .description("learn a station recipe (recipes/<name>.md) from finished conversations; adds a lines block if none uses it")
+  .option("-d, --dir <dir>", "workflow folder", ".")
+  .option("-r, --run <id>")
+  .option("-f, --from <nodes...>", "chat/agent nodes to learn from (node, or node@foreach/item)")
+  .option("-m, --model <model>")
+  .action(async (name: string, o: { dir: string; run?: string; from?: string[]; model?: string }) => {
+    try {
+      const store = await api.getStore(path.resolve(o.dir), o.run);
+      const chats = (o.from ?? []).map((s) => {
+        const [node, item] = s.split("@");
+        return parseAddr(node, item);
+      });
+      const r = await api.distill(store, name, chats, engines, { log: out, model: o.model });
+      out(`recipe ${name} v${r.recipe.version} written to ${r.file}`);
+      for (const [i, st] of r.recipe.steps.entries()) out(`  ${i + 1}. ${st.title}  (${st.gate}${st.expects.length ? ` · expects ${st.expects.join(", ")}` : ""})`);
+      if (r.linesId) out(`lines "${r.linesId}" added to workflow.yaml — put entries in lists/${r.linesId}.yaml and \`flowy depart ${r.linesId} <entry>\``);
+    } catch (e) {
+      fail(e);
+    }
+  });
+
+program
   .command("done <node>")
   .description("mark a wait/chat node complete once its outputs exist")
   .option("-d, --dir <dir>", "workflow folder", ".")

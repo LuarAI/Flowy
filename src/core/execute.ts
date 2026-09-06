@@ -117,7 +117,12 @@ export async function executeNode(ctx: ExecContext, addr: NodeAddr, opts: ExecOp
       await writeText(path.join(vdir, "feedback.md"), opts.feedback + "\n");
       prompt += `\n\n## Feedback on the previous attempt\n\n${opts.feedback}\n\nThe previous outputs are under in/_previous/. Produce improved outputs in out/.\n`;
     }
-    const preamble = `Working directory contract: your inputs are under ./in (read-only), write every output into ./out. Declared outputs: ${spec.outputs.join(", ")}.\n\n`;
+    // A headless step must leave its declared files; a conversation writes
+    // files only for deliverables and answers everything else in chat.
+    const preamble =
+      spec.mode === "chat" && !spec.recipe
+        ? `Working directory contract: your inputs are under ./in (read-only). Put a file in ./out only when a later step needs it${spec.outputs.length ? ` (expected: ${spec.outputs.join(", ")})` : ""}; answer everything else in chat — never write a file just to hold a reply.\n\n`
+        : `Working directory contract: your inputs are under ./in (read-only), write every output into ./out. Declared outputs: ${spec.outputs.join(", ")}.\n\n`;
     const engine = spec.mode === "agent" || spec.mode === "chat" ? ctx.engines.get(engineName(store, spec)) : null;
     let schema: Record<string, unknown> | null = null;
     if (spec.schema) {
@@ -310,7 +315,7 @@ function buildEnv(ctx: ExecContext, store: RunStore, spec: NodeSpec, addr: NodeA
   return env;
 }
 
-async function outputInfos(vdir: string): Promise<Record<string, OutputInfo>> {
+export async function outputInfos(vdir: string): Promise<Record<string, OutputInfo>> {
   const od = path.join(vdir, "out");
   const out: Record<string, OutputInfo> = {};
   for (const f of await listFiles(od)) {

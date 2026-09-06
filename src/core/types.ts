@@ -50,6 +50,8 @@ export interface NodeSpec {
   permissions: "ask" | "ask-all" | "allow-all";
   run: string | RunCommand | null;
   hint: string | null;
+  /** Lines only: the recipe (`recipes/<name>.md`) whose stations drive this node's conversation. */
+  recipeRef: string | null;
   /** The markdown body: the prompt (agent/chat) or a description (script/wait). */
   body: string;
   /** Absolute path to the node file. */
@@ -62,8 +64,8 @@ export interface NodeSpec {
 
 export interface ForeachSpec {
   id: string;
-  /** `<node>.<key>` split. */
-  source: { node: string; key: string };
+  /** `<node>.<key>` split; null for a lines block (items come from the timetable, on demand). */
+  source: { node: string; key: string } | null;
   workflowDir: string;
   key: string | null;
   concurrency: number;
@@ -71,6 +73,41 @@ export interface ForeachSpec {
   nodes: string[];
   /** Implicit top-level dependencies: the source node plus everything nested nodes reference. */
   needs: string[];
+  /** Lines block: the recipe every item follows (SPEC §5.1). */
+  recipe: string | null;
+  /** Lines block: absolute path of the timetable file (`lists/<id>.yaml`). */
+  list: string | null;
+}
+
+/** One station of a recipe (SPEC §2.6). */
+export interface RecipeStep {
+  id: string;
+  title: string;
+  /** auto: the next station follows by itself · confirm: the human says when · you: the human is the worker here. */
+  gate: "auto" | "confirm" | "you";
+  /** Files this station must leave under out/ (checked before an auto advance). */
+  expects: string[];
+  model: string | null;
+  body: string;
+}
+
+export interface RecipeSpec {
+  name: string;
+  title: string;
+  version: number;
+  /** Absolute path of recipes/<name>.md. */
+  file: string;
+  /** Rules that hold at every station; sent once when a line departs. */
+  preamble: string;
+  steps: RecipeStep[];
+  /** Named style variants (liveries): name -> description. */
+  styles: Record<string, string>;
+  defaultStyle: string | null;
+  context: string[];
+  tools: string[] | null;
+  model: string | null;
+  permissions: "ask" | "ask-all" | "allow-all" | null;
+  timeout: string | null;
 }
 
 export interface EngineConfig {
@@ -98,6 +135,8 @@ export interface Manifest {
   /** All nodes, top-level and nested, keyed by id. */
   nodes: Record<string, NodeSpec>;
   foreach: Record<string, ForeachSpec>;
+  /** Recipes referenced by lines blocks, frozen with the run (a running line finishes on the version it departed with). */
+  recipes: Record<string, RecipeSpec>;
   /** Top-level order: node ids and foreach ids. */
   top: string[];
   /** Edges among top-level vertices (foreach ids count as vertices) and within nested workflows. */
@@ -199,4 +238,21 @@ export interface Approval {
   [field: string]: unknown;
   _approved_at: string;
   _approved_by: string;
+}
+
+/** Where a line is on its recipe: `items/<lines-id>/<item>/line.json` (SPEC §5.1). */
+export interface LineState {
+  recipe: string;
+  version: number;
+  style: string | null;
+  /** 0-based index of the current station. */
+  step: number;
+  /** running: a station's turn is in flight · waiting: needs the human (a gate, or something to look at) · done · failed. */
+  state: "pending" | "running" | "waiting" | "done" | "failed";
+  /** Why it waits, in plain words (null when it's simply the gate). */
+  note: string | null;
+  started: string;
+  updated: string;
+  waitingSince: string | null;
+  history: Array<{ step: number; id: string; started: string; ended: string | null }>;
 }

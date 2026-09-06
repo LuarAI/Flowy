@@ -187,6 +187,40 @@ batch); a distilled recipe is robust, reviewable (it is just the node file,
 diffable in git) and keeps chat as the escape hatch — "teach it once, then
 it just does it, and you can always re-teach." Recorded 2026-09-02.
 
+## D17 — Repeated work rides a station recipe, one station at a time, on a map.
+
+A **recipe** (`recipes/<name>.md`) is a whole pipeline of one kind of work
+written as stations with gates (`auto` / `confirm` / `you`); a **line** is
+one item following it in a single conversation, and the agent is shown
+exactly one station at a time (SPEC §2.6, §5.1). Recipes are learned by
+distilling several finished conversations, versioned by Flowy, and every
+line snapshots the version it departed with. The viewer's default face for
+a workflow with lines is a transit-style map: trunk → junction → one line
+per item, stations, a glow only where a human is the worker, a departures
+board sorted by waiting time, one click to the conversation.
+
+**Why:** reading the user's own three video conversations side by side
+(2026-09-05): they were the same pipeline run three times by hand, with the
+same boilerplate message pasted into each, and they failed in the ways a
+whole-recipe-in-context fails — the model jumped phases ("titles come
+later"), the longest chat hit context compaction, and after compaction it
+lost the thread. Disclosing one station at a time removes the future from
+the context, keeps each turn small, and lets files rather than chat memory
+carry state — which is Flowy's founding rule. The map won over a kanban
+board and a bento grid because it is the only view where lineage (trunk,
+junction, a line that later splits) has a shape, while still being
+*computed*, never arranged: the user's own note-taking app had taught them
+that free canvases become spaghetti once the structure is known.
+Snapshotting the recipe per line keeps "edit the recipe" safe while trains
+are on the track. "Talking always wins" (a message at a `you` station is
+its answer; every button is a shortcut for a sentence) keeps the chat the
+primary interface. Recorded 2026-09-06.
+
+**Deferred, on purpose:** silent self-editing recipes — one run's exception
+(a video shipped without its URL card because the site was offline) must
+not become a rule; learnings are proposed, never applied. Splits drawn on
+the map, semantic zoom, and "talk to the recipe" are on the roadmap.
+
 ## D15 — Pinned external facts to re-check before v1
 
 - Claude Code `--bare` is slated to become the default for `-p`; bare mode

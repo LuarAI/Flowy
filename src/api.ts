@@ -10,7 +10,7 @@ import { ensureLayout } from "./core/layout.js";
 import { createRun, loadRun, resolveInputs, type RunStore } from "./core/runstore.js";
 import { runWorkflow, runLockHolder, updateItemStates, type RunOptions, type RunSummary } from "./core/scheduler.js";
 import { missingOutputs, nodeView, readVersionText, runOverview, type NodeView, type RunOverview } from "./core/status.js";
-import type { ApproveField, Manifest, NodeAddr, NodeResult, TraceEvent } from "./core/types.js";
+import type { ApproveField, LineState, Manifest, NodeAddr, NodeResult, RecipeSpec, TraceEvent } from "./core/types.js";
 import { EngineRegistry } from "./engines/index.js";
 import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -243,6 +243,10 @@ export async function sendChatMessage(
     permission?: { url: string; token: string };
     /** Override the node's permission stance for this turn. */
     permissions?: "ask" | "ask-all" | "allow-all";
+    /** Lines: replaces the default opening preamble on the first turn (ignored once a session exists). */
+    preamble?: string | null;
+    /** Lines: this message opens a station; recorded in the trace so the viewer shows a marker, not a bubble. */
+    station?: { index: number; total: number; id: string; title: string; gate: string };
   } = {},
 ): Promise<ChatTurn> {
   const spec = store.manifest.nodes[addr.node];
@@ -272,24 +276,39 @@ export async function sendChatMessage(
     }
   }
 
+  // Inputs wired after the conversation started (a context file attached
+  // mid-chat, an upstream that has since finished) land in in/ now, and the
+  // message says so — no searching, no wasted tokens.
+  const { engineConfigFor, templateContext } = await import("./core/status.js");
+  const { readItem, refreshInputs } = await import("./core/materialize.js");
+  let arrived: string[] = [];
+  if (resume) {
+    try {
+      arrived = await refreshInputs(store, spec, addr, vdir, templateContext(store, spec, await readItem(store, addr)));
+    } catch {
+      /* best effort */
+    }
+  }
+  const sent = arrived.length ? `(new under ./in since we started: ${arrived.map((a) => `in/${a}`).join(", ")})\n\n${text}` : text;
+
   const traceFile = path.join(vdir, "trace.jsonl");
   const append = (e: TraceEvent) => {
     void fs.appendFile(traceFile, JSON.stringify(e) + "\n").catch(() => {});
     opts.emit?.({ addr, event: e });
   };
-  append({ t: new Date().toISOString(), type: "user", engine: engine.name, payload: { text } });
+  append({ t: new Date().toISOString(), type: "user", engine: engine.name, payload: opts.station ? { text: sent, station: opts.station } : { text: sent } });
 
-  const { engineConfigFor } = await import("./core/status.js");
   const refs = await fs.readFile(path.join(vdir, "in", "_refs.json"), "utf8").catch(() => "[]");
   const addDirs = [...new Set((JSON.parse(refs) as Array<{ path: string }>).map((r) => path.dirname(r.path)))];
+  const warn = prepWarnings.length ? `Note: not everything is in place yet (${prepWarnings.join("; ")}) — work with what exists and say so when something is missing.\n\n` : "";
   const preamble = resume
     ? ""
-    : `Working directory contract: your inputs are under ./in (read-only); anything you produce goes into ./out. Keep answers conversational and concise.\n\n${
-        prepWarnings.length ? `Note: not everything is in place yet (${prepWarnings.join("; ")}) — work with what exists and say so when something is missing.\n\n` : ""
-      }${spec.body.trim() ? spec.body.trim() + "\n\n" : ""}`;
+    : opts.preamble != null
+      ? opts.preamble + warn
+      : `Working directory contract: your inputs are under ./in (read-only). Put a file in ./out only when a later step needs it; answer everything else in chat — never write a file just to hold a reply. Keep answers conversational and concise.\n\n${warn}${spec.body.trim() ? spec.body.trim() + "\n\n" : ""}`;
   const er = await engine.run({
     cwd: vdir,
-    prompt: preamble + text,
+    prompt: preamble + sent,
     tools: spec.tools,
     outputs: spec.outputs,
     schema: null,
@@ -404,6 +423,220 @@ export async function crystallize(store: RunStore, addr: NodeAddr, engines = new
   return crystallizeNode(store, addr, engines, { log });
 }
 
+// ---- lines: a recipe followed station by station (SPEC §5.1) ----------------
+
+export interface LineOptions {
+  engines?: EngineRegistry;
+  env?: NodeJS.ProcessEnv;
+  log?: Logger;
+  emit?: (ev: { addr: NodeAddr; event: TraceEvent }) => void;
+  onLine?: (feId: string, itemId: string, ls: LineState) => void;
+  /** Per-turn plumbing from the server: an abort signal and the permission bridge; `done` releases them. */
+  turnContext?: (addr: NodeAddr) => { signal?: AbortSignal; permission?: { url: string; token: string }; done: () => void };
+}
+
+function lineDeps(store: RunStore, opts: LineOptions): import("./core/lines.js").DriveDeps {
+  const engines = opts.engines ?? new EngineRegistry();
+  return {
+    turn: async (addr, text, station, preamble, model) => {
+      const tc = opts.turnContext?.(addr);
+      try {
+        const spec = store.manifest.nodes[addr.node];
+        return await sendChatMessage(store, addr, text, engines, {
+          emit: opts.emit,
+          env: opts.env,
+          log: opts.log,
+          signal: tc?.signal,
+          permission: tc?.permission,
+          model: model ?? spec.model ?? undefined,
+          preamble,
+          station,
+        });
+      } finally {
+        tc?.done();
+      }
+    },
+    finish: async (addr) => {
+      const vdir = await store.currentDir(addr);
+      const res = vdir ? await store.readResult(vdir) : null;
+      if (vdir && res && res.status !== "done") {
+        const { outputInfos } = await import("./core/execute.js");
+        res.status = "done";
+        res.ended = new Date().toISOString();
+        res.duration_ms = Date.parse(res.ended) - Date.parse(res.started);
+        res.exit_code = 0;
+        res.outputs = await outputInfos(vdir);
+        await store.writeResult(vdir, res);
+      }
+      await updateItemStates(store);
+    },
+    log: opts.log,
+    onChange: opts.onLine,
+  };
+}
+
+/** Start lines for timetable entries (the departures sheet / `flowy depart`). Drives each to its first gate, `concurrency` at a time. */
+export async function depart(store: RunStore, feId: string, picks: Array<{ id: string; style?: string | null }>, opts: LineOptions = {}): Promise<LineState[]> {
+  const { createLine, driveLine, recipeOf } = await import("./core/lines.js");
+  const { readTimetable } = await import("./core/recipe.js");
+  const fe = store.manifest.foreach[feId];
+  if (!fe || !fe.recipe) throw new Error(`"${feId}" is not a lines block`);
+  const recipe = recipeOf(store, feId);
+  const timetable = await readTimetable(fe.list!);
+  const created: string[] = [];
+  for (const p of picks) {
+    const entry = timetable.find((e) => e.id === p.id);
+    if (!entry) throw new Error(`"${p.id}" is not on the timetable (${path.relative(store.manifest.dir, fe.list!)})`);
+    const style = p.style ?? recipe.defaultStyle;
+    await createLine(store, feId, entry, style, timetable.indexOf(entry));
+    created.push(entry.id);
+  }
+  const deps = lineDeps(store, opts);
+  const results: LineState[] = [];
+  const queue = [...created];
+  const workers = Array.from({ length: Math.max(1, fe.concurrency) }, async () => {
+    for (;;) {
+      const id = queue.shift();
+      if (!id) return;
+      results.push(await driveLine(store, feId, id, deps));
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+/** Move a line to its next station (a `confirm`/`you` gate answered), optionally carrying the human's words. */
+export async function lineNext(store: RunStore, feId: string, itemId: string, opts: LineOptions = {}, text: string | null = null): Promise<LineState> {
+  const { advanceLine } = await import("./core/lines.js");
+  return advanceLine(store, feId, itemId, lineDeps(store, opts), text);
+}
+
+/** Run the current station again from its prompt (after a stop, a failure, or a restart). */
+export async function lineResume(store: RunStore, feId: string, itemId: string, opts: LineOptions = {}): Promise<LineState> {
+  const { driveLine, readLine } = await import("./core/lines.js");
+  const ls = await readLine(store, feId, itemId);
+  if (!ls) throw new Error(`no line "${feId}/${itemId}"`);
+  if (ls.state === "running") throw new Error(`${feId}/${itemId} is mid-station`);
+  if (ls.state === "done") throw new Error(`${feId}/${itemId} has already arrived`);
+  return driveLine(store, feId, itemId, lineDeps(store, opts));
+}
+
+/** Where every line is, for the map and the departures board. */
+export async function linesOverview(store: RunStore, opts: { live?: (addr: NodeAddr) => boolean; liveRecipes?: Record<string, RecipeSpec> } = {}): Promise<LinesView[]> {
+  const { readLine, lineRecipe } = await import("./core/lines.js");
+  const { readTimetable } = await import("./core/recipe.js");
+  const out: LinesView[] = [];
+  for (const id of store.manifest.top) {
+    const fe = store.manifest.foreach[id];
+    if (!fe || !fe.recipe) continue;
+    const recipe = store.manifest.recipes[fe.recipe];
+    if (!recipe) continue;
+    let timetable: Array<{ id: string; title: string; brief: string }> = [];
+    let timetableError: string | null = null;
+    try {
+      timetable = await readTimetable(fe.list!);
+    } catch (e) {
+      timetableError = (e as Error).message;
+    }
+    const items = await store.listItems(id);
+    const started = new Set(items.map((i) => i.id));
+    const lines: LineView[] = [];
+    for (const it of items) {
+      const ls = await readLine(store, id, it.id);
+      if (!ls) continue;
+      const own = await lineRecipe(store, id, it.id);
+      const addr: NodeAddr = { node: fe.nodes[0], item: { foreach: id, id: it.id } };
+      const vdir = await store.currentDir(addr);
+      const res = vdir ? await store.readResult(vdir) : null;
+      const entry = it.item ?? {};
+      lines.push({
+        foreach: id,
+        item: it.id,
+        addr,
+        title: typeof entry.title === "string" ? entry.title : it.id,
+        brief: typeof entry.brief === "string" ? entry.brief : "",
+        line: ls,
+        steps: own.steps.map((s) => ({ id: s.id, title: s.title, gate: s.gate })),
+        gate: own.steps[ls.step]?.gate ?? null,
+        cost: res?.cost_usd ?? 0,
+        live: opts.live?.(addr) ?? false,
+        parked: it.state === "skipped",
+      });
+    }
+    out.push({
+      id,
+      recipe,
+      liveVersion: opts.liveRecipes?.[fe.recipe]?.version ?? recipe.version,
+      timetable: timetable.map((e) => ({ id: e.id, title: e.title, brief: e.brief, started: started.has(e.id) })),
+      timetableError,
+      listFile: fe.list!,
+      needs: fe.needs,
+      lines,
+    });
+  }
+  return out;
+}
+
+export interface LineView {
+  foreach: string;
+  item: string;
+  addr: NodeAddr;
+  title: string;
+  brief: string;
+  line: LineState;
+  steps: Array<{ id: string; title: string; gate: string }>;
+  gate: "auto" | "confirm" | "you" | null;
+  cost: number;
+  /** A turn is in flight right now (server-side knowledge). */
+  live: boolean;
+  parked: boolean;
+}
+
+export interface LinesView {
+  id: string;
+  recipe: RecipeSpec;
+  liveVersion: number;
+  timetable: Array<{ id: string; title: string; brief: string; started: boolean }>;
+  timetableError: string | null;
+  listFile: string;
+  needs: string[];
+  lines: LineView[];
+}
+
+/** Add an entry to a lines block's timetable (`lists/<id>.yaml`). */
+export async function addTimetableEntry(store: RunStore, feId: string, entry: { title: string; brief?: string }): Promise<{ id: string; title: string; brief: string }> {
+  const fe = store.manifest.foreach[feId];
+  if (!fe || !fe.recipe) throw new Error(`"${feId}" is not a lines block`);
+  if (!entry.title.trim()) throw new Error("give the line a title");
+  const { appendTimetableEntry } = await import("./core/recipe.js");
+  return appendTimetableEntry(fe.list!, entry);
+}
+
+/** Learn a station recipe from several finished conversations (SPEC §2.6). */
+export async function distill(store: RunStore, name: string, chats: NodeAddr[], engines = new EngineRegistry(), opts: { log?: Logger; env?: NodeJS.ProcessEnv; model?: string } = {}) {
+  const { distillRecipe } = await import("./core/distill.js");
+  return distillRecipe(store, name, chats, engines, opts);
+}
+
+/** On startup: a line whose turn died with the previous process is not running any more. */
+export async function reconcileLines(store: RunStore, live: (addr: NodeAddr) => boolean): Promise<void> {
+  const { readLine, writeLine } = await import("./core/lines.js");
+  for (const fe of Object.values(store.manifest.foreach)) {
+    if (!fe.recipe) continue;
+    for (const it of await store.listItems(fe.id)) {
+      const ls = await readLine(store, fe.id, it.id);
+      if (!ls || ls.state !== "running") continue;
+      if (live({ node: fe.nodes[0], item: { foreach: fe.id, id: it.id } })) continue;
+      ls.state = "waiting";
+      ls.note = "interrupted (Flowy restarted mid-station) — resume the station, or talk to it";
+      ls.waitingSince = new Date().toISOString();
+      const last = ls.history[ls.history.length - 1];
+      if (last && !last.ended) last.ended = new Date().toISOString();
+      await writeLine(store, fe.id, it.id, ls);
+    }
+  }
+}
+
 // ---- inspection --------------------------------------------------------------
 
 export interface VersionDetail {
@@ -506,7 +739,10 @@ export function formatPlan(m: Manifest): string {
   for (const id of order) {
     if (id in m.foreach) {
       const fe = m.foreach[id];
-      lines.push(`  ${id}  foreach ${fe.source.node}.${fe.source.key} → [${fe.nodes.join(" → ")}]  (needs ${fe.needs.join(", ")})`);
+      if (!fe.source) {
+        const r = m.recipes[fe.recipe!];
+        lines.push(`  ${id}  lines · recipe ${fe.recipe} v${r?.version ?? "?"} → [${(r?.steps ?? []).map((s) => s.id).join(" → ")}]${fe.needs.length ? `  (needs ${fe.needs.join(", ")})` : ""}`);
+      } else lines.push(`  ${id}  foreach ${fe.source.node}.${fe.source.key} → [${fe.nodes.join(" → ")}]  (needs ${fe.needs.join(", ")})`);
     } else {
       const n = m.nodes[id];
       lines.push(`  ${id}  ${n.mode}${n.approve ? " · gate" : ""}${n.lock ? ` · lock ${n.lock}` : ""}${n.needs.length ? `  (needs ${n.needs.join(", ")})` : ""}`);

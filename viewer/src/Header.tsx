@@ -2,14 +2,18 @@ import { useState } from "react";
 import { Folder, Play, Redo, Stop, X } from "./icons";
 import { post, type State } from "./client";
 
+export type View = "map" | "canvas";
+
 interface Props {
   state: State;
+  view: View;
+  onView: (v: View) => void;
   onRun: (opts: { run?: string; inputs?: Record<string, unknown>; recompile?: boolean }) => void;
   onStop: () => void;
   act: (fn: () => Promise<unknown>) => Promise<void>;
 }
 
-export function Header({ state, onRun, onStop, act }: Props) {
+export function Header({ state, view, onView, onRun, onStop, act }: Props) {
   const [showNew, setShowNew] = useState(false);
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [ctxMenu, setCtxMenu] = useState(false);
@@ -19,7 +23,8 @@ export function Header({ state, onRun, onStop, act }: Props) {
   const m = state.manifest;
   const ov = state.overview;
   const running = !!state.running;
-  const needs = ov?.pending.length ?? 0;
+  const linesWaiting = (state.lines ?? []).reduce((n, b) => n + b.lines.filter((l) => !l.parked && (l.line.state === "waiting" || l.line.state === "failed")).length, 0);
+  const needs = (ov?.pending.length ?? 0) + linesWaiting;
   const inputDecls = Object.entries(m?.inputs ?? {});
   const empty = (m?.top.length ?? 0) === 0;
 
@@ -49,10 +54,20 @@ export function Header({ state, onRun, onStop, act }: Props) {
         <span className="logo">flowy</span>
         <span className="wf">/ {m?.name ?? "…"}</span>
       </div>
-      <button className="ghost" onClick={() => window.dispatchEvent(new CustomEvent("flowy:add-step"))} title="a new conversation on the canvas">
-        + chat
-      </button>
-      <div style={{ position: "relative" }}>
+      <span className="view-toggle">
+        <button className={`ghost ${view === "map" ? "on" : ""}`} onClick={() => onView("map")} title="live service: every line, station by station">
+          map
+        </button>
+        <button className={`ghost ${view === "canvas" ? "on" : ""}`} onClick={() => onView("canvas")} title="the workshop: chats, context, wiring">
+          canvas
+        </button>
+      </span>
+      {view === "canvas" && (
+        <button className="ghost" onClick={() => window.dispatchEvent(new CustomEvent("flowy:add-step"))} title="a new conversation on the canvas">
+          + chat
+        </button>
+      )}
+      <div style={{ position: "relative", display: view === "canvas" ? undefined : "none" }}>
         <button className="ghost" onClick={() => setCtxMenu((v) => !v)} title="give the chats something to read">
           + context
         </button>

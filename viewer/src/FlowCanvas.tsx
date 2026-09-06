@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChatView } from "./ChatView";
 import {
   Background,
   BackgroundVariant,
@@ -17,7 +18,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { addrParams, get, post, type ForeachView, type NodeAddr, type NodeView, type State, type TraceEvent } from "./client";
+import { get, post, type ForeachView, type NodeAddr, type NodeView, type State } from "./client";
 import { renderMarkdown } from "./markdown";
 import { collectSources, entryFor, humanMode, humanStatus, itemWorst, placeholderView, relativeEntry, NEEDS_YOU, WRONG, type SourcePill } from "./model";
 import { Box, Check, FileIcon, Folder, Pencil, Play } from "./icons";
@@ -54,176 +55,16 @@ interface Ctx {
 
 /* ---------------- chat card ---------------- */
 
-interface ChatMsg {
-  role: "user" | "assistant" | "tool" | "note";
-  text: string;
-}
-
-function traceToMessages(trace: TraceEvent[]): ChatMsg[] {
-  const out: ChatMsg[] = [];
-  for (const e of trace) {
-    const p = e.payload as Record<string, unknown> | string | null;
-    if (e.type === "user" && p && typeof p === "object" && typeof p.text === "string") out.push({ role: "user", text: p.text });
-    else if (e.type === "text" && p && typeof p === "object" && typeof (p as Record<string, unknown>).text === "string") out.push({ role: "assistant", text: String((p as Record<string, unknown>).text) });
-    else if (e.type === "tool_use" && p && typeof p === "object" && typeof (p as Record<string, unknown>).name === "string") {
-      // say WHAT it touched, not just the tool name
-      const input = ((p as Record<string, unknown>).input ?? {}) as Record<string, unknown>;
-      let detail = "";
-      if (typeof input.command === "string") detail = input.command.slice(0, 64);
-      else if (typeof input.description === "string") detail = input.description.slice(0, 64);
-      else {
-        const pth = input.file_path ?? input.path ?? input.pattern ?? input.url ?? input.query;
-        if (typeof pth === "string") detail = pth.replace(/\\/g, "/").split("/").pop()!.slice(0, 64);
-      }
-      out.push({ role: "tool", text: `${String((p as Record<string, unknown>).name)}${detail ? ` · ${detail}` : ""}` });
-    } else if (e.type === "end" && p && typeof p === "object" && (p as Record<string, unknown>).stopped === true) {
-      out.push({ role: "tool", text: "■ stopped — this conversation continues where it left off" });
-    } else if (e.type === "end" && p && typeof p === "object" && (p as Record<string, unknown>).timed_out === true) {
-      out.push({ role: "tool", text: "⏱ hit this chat's turn time limit — send a message to continue" });
-    }
-  }
-  // merge consecutive identical tool lines
-  return out.filter((m, i) => !(m.role === "tool" && out[i - 1]?.role === "tool" && out[i - 1].text === m.text));
-}
-
 type CardNode = Node<{ ctx: Ctx; view: NodeView }, "chat" | "simple">;
 
 function ChatCard({ data }: NodeProps<CardNode>) {
   const { ctx, view: v } = data;
   const addr = v.addr;
-  const key = addr.item ? `${addr.item.foreach}/${addr.item.id}:${addr.node}` : addr.node;
-  const draftKey = `flowy-draft:${ctx.state.dir}:${addr.node}`;
-  const [msgs, setMsgs] = useState<ChatMsg[] | null>(null);
-  const [draft, setDraftRaw] = useState<string>(() => {
-    try {
-      return localStorage.getItem(draftKey) ?? "";
-    } catch {
-      return "";
-    }
-  });
-  const setDraft = (v: string) => {
-    setDraftRaw(v);
-    try {
-      if (v) localStorage.setItem(draftKey, v);
-      else localStorage.removeItem(draftKey);
-    } catch {
-      /* storage unavailable */
-    }
-  };
-  const [busy, setBusy] = useState(false);
-  // Messages typed while a turn is running: sent, in order, the moment it ends.
-  const [queue, setQueue] = useState<string[]>([]);
-  const queueRef = useRef<string[]>([]);
   const [model, setModel] = useState<string>(v.model ?? "");
   const [stance, setStance] = useState<string>(v.permissions ?? "ask");
-  const [perms, setPerms] = useState<Array<{ id: string; tool: string; detail: string }>>([]);
   const [branching, setBranching] = useState(false);
   const [branchName, setBranchName] = useState("");
-  const scroller = useRef<HTMLDivElement>(null);
   const runId = ctx.state.overview?.run.id;
-
-  useEffect(() => {
-    let live = true;
-    get<{ trace: TraceEvent[] }>("/api/node", { run: runId, ...addrParams(addr) })
-      .then((d) => live && setMsgs(traceToMessages(d.trace)))
-      .catch(() => live && setMsgs([]));
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, runId, ctx.refreshKey]);
-
-  useEffect(() => {
-    const onEvent = (ev: Event) => {
-      const d = (ev as CustomEvent).detail as { addr: NodeAddr; event: TraceEvent };
-      const dk = d.addr.item ? `${d.addr.item.foreach}/${d.addr.item.id}:${d.addr.node}` : d.addr.node;
-      if (dk !== key) return;
-      setMsgs((cur) => [...(cur ?? []), ...traceToMessages([d.event])]);
-    };
-    window.addEventListener("flowy:chat-event", onEvent);
-    return () => window.removeEventListener("flowy:chat-event", onEvent);
-  }, [key]);
-
-  useEffect(() => {
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
-  }, [msgs, perms]);
-
-  // permission requests: this chat wants to use a tool outside its allowlist
-  useEffect(() => {
-    const onPerm = (ev: Event) => {
-      const d = (ev as CustomEvent).detail as { id: string; addr: NodeAddr; tool: string; input: Record<string, unknown> };
-      const dk = d.addr.item ? `${d.addr.item.foreach}/${d.addr.item.id}:${d.addr.node}` : d.addr.node;
-      if (dk !== key) return;
-      const input = d.input ?? {};
-      const detail = String(input.query ?? input.command ?? input.url ?? input.prompt ?? input.file_path ?? input.path ?? "").slice(0, 120);
-      setPerms((cur) => [...cur, { id: d.id, tool: d.tool, detail }]);
-    };
-    const onDone = (ev: Event) => {
-      const d = (ev as CustomEvent).detail as { id: string };
-      setPerms((cur) => cur.filter((p) => p.id !== d.id));
-    };
-    window.addEventListener("flowy:perm", onPerm);
-    window.addEventListener("flowy:perm-done", onDone);
-    return () => {
-      window.removeEventListener("flowy:perm", onPerm);
-      window.removeEventListener("flowy:perm-done", onDone);
-    };
-  }, [key]);
-
-  const postTurn = (text: string) =>
-    post<{ stopped?: boolean }>("/api/chat-message", {
-      run: runId,
-      node: addr.node,
-      item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined,
-      text,
-      model: model || undefined,
-      permissions: stance !== "ask" ? stance : undefined,
-    });
-
-  const send = async () => {
-    const text = draft.trim();
-    if (!text) return;
-    if (busy) {
-      // A turn is running: queue it — it sends the moment the turn ends.
-      queueRef.current = [...queueRef.current, text];
-      setQueue(queueRef.current);
-      setDraft("");
-      return;
-    }
-    setBusy(true);
-    // The bubble shows the message now; if the turn fails it comes back below.
-    setDraft("");
-    let current = text;
-    try {
-      for (;;) {
-        await postTurn(current);
-        const next = queueRef.current.shift();
-        setQueue([...queueRef.current]);
-        if (next === undefined) break;
-        current = next;
-      }
-    } catch (e) {
-      // Everything unsent comes back to the box: the failed message plus the queue.
-      const back = [current, ...queueRef.current].join("\n");
-      queueRef.current = [];
-      setQueue([]);
-      setDraftRaw((cur) => {
-        const keep = cur.trim() ? cur : back;
-        try {
-          localStorage.setItem(draftKey, keep);
-        } catch {
-          /* storage unavailable */
-        }
-        return keep;
-      });
-      ctx.onError(`your message is back in the box — ${(e as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const stopTurn = () =>
-    void post("/api/chat-stop", { run: runId, node: addr.node, item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined }).catch(() => {});
 
   const branch = async () => {
     const id = branchName
@@ -255,70 +96,19 @@ function ChatCard({ data }: NodeProps<CardNode>) {
           {v.result?.cost_usd ? ` · ≈$${v.result.cost_usd.toFixed(2)}` : ""}
         </span>
       </div>
-      <div ref={scroller} className="bubbles nowheel nodrag">
-        {msgs === null && <div className="muted small">…</div>}
-        {msgs !== null && msgs.length === 0 && <div className="muted small">{v.brief ? "say something to start — it knows its brief" : "say something to start"}</div>}
-        {(msgs ?? []).map((m, i) =>
-          m.role === "tool" ? (
-            <div key={i} className="tool-line">
-              ⚙ {m.text}
-            </div>
-          ) : m.role === "assistant" ? (
-            <div key={i} className="bubble assistant md" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
-          ) : (
-            <div key={i} className={`bubble ${m.role}`}>
-              {m.text}
-            </div>
-          ),
-        )}
-        {queue.map((t, i) => (
-          <div key={`q${i}`} className="bubble user queued" title="queued — sends when this turn ends">
-            {t}
-          </div>
-        ))}
-        {perms.map((p) => (
-          <div key={p.id} className="perm-ask">
-            <div className="perm-text">
-              wants to use <strong>{p.tool.replace(/^mcp__[^_]+__/, "")}</strong>
-              {p.detail ? ` — ${p.detail}` : ""}
-            </div>
-            <div className="perm-buttons">
-              <button className="primary" onClick={() => void post("/api/perm/answer", { id: p.id, behavior: "allow" })}>
-                allow
-              </button>
-              <button className="ghost" onClick={() => void post("/api/perm/answer", { id: p.id, behavior: "deny" })}>
-                deny
-              </button>
-            </div>
-          </div>
-        ))}
-        {busy && perms.length === 0 && <div className="tool-line">thinking…</div>}
-      </div>
-      <div className="chat-input nodrag nowheel">
-        <textarea
-          rows={1}
-          placeholder={busy ? "queue a message — sends when this turn ends" : "talk to it"}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-        />
-        {busy ? (
-          <button className="ghost stop" onClick={stopTurn} title="stop this turn — everything done so far is kept">
-            ■
-          </button>
-        ) : (
-          <button className="ghost" disabled={!draft.trim()} onClick={() => void send()} title="send (Enter)">
-            <Play size={13} />
-          </button>
-        )}
-      </div>
+      <ChatView
+        dir={ctx.state.dir}
+        runId={runId}
+        addr={addr}
+        refreshKey={ctx.refreshKey}
+        model={model}
+        permissions={stance}
+        onError={ctx.onError}
+        inFlow
+        emptyHint={v.brief ? "say something to start — it knows its brief" : "say something to start"}
+      />
       <div className="chat-actions nodrag">
-        <button className="ghost small" disabled={!v.result?.session_id || busy} onClick={() => ctx.act(() => post("/api/crystallize", { run: runId, node: addr.node, item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined }))} title="distill this conversation into the recipe — next time it runs alone">
+        <button className="ghost small" disabled={!v.result?.session_id} onClick={() => ctx.act(() => post("/api/crystallize", { run: runId, node: addr.node, item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined }))} title="distill this conversation into the recipe — next time it runs alone">
           <Pencil size={12} /> {v.recipe ? "update recipe" : "create recipe"}
         </button>
         <button className="ghost small" disabled={!v.result?.session_id} onClick={() => setBranching((b) => !b)} title="a new chat that remembers this whole conversation">
@@ -491,7 +281,8 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
     for (const [i, id] of m.top.entries()) {
       const p = pos.get(id) ?? { x: 420, y: i * 240 };
       if (id in m.foreach) {
-        const fe = feById.get(id) ?? { id, source: `${m.foreach[id].source.node}.${m.foreach[id].source.key}`, expanded: false, items: [], needs: m.foreach[id].needs, nodes: m.foreach[id].nodes };
+        const src = m.foreach[id].source;
+        const fe = feById.get(id) ?? { id, source: src ? `${src.node}.${src.key}` : `recipe ${m.foreach[id].recipe}`, expanded: false, items: [], needs: m.foreach[id].needs, nodes: m.foreach[id].nodes };
         ns.push({ id, type: "checklist", position: p, data: { ctx, fe } });
       } else {
         const view = viewById.get(id) ?? placeholderView(m, id);
