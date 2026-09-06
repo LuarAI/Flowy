@@ -178,7 +178,14 @@ departures sheet. Rules:
   `flowy distill <name> --from <node>…` writes the recipe from them and
   adds the lines block. Edit the result only where it is wrong.
 - Do not edit `runs/<run>/items/…/line.json` or `recipe.json`; `flowy next`
-  and `flowy next --resume` are how a line moves.
+  and `flowy next --resume` are how a line moves, and `flowy next --update`
+  is how a waiting line adopts a recipe you just edited (its remaining
+  stations follow the new version; keep station count and order compatible
+  or re-depart).
+- Say things in chat unless a later station needs them as a file. A hook
+  list, a ranking, five titles: chat. A script the human records from, a
+  beat sheet the build reads, a build script: `out/`. Stations that need a
+  file say so with `expects:`; the rest should not mention `out/` at all.
 
 ## Prompt-writing rules for `agent` nodes
 

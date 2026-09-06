@@ -48,6 +48,27 @@ export async function lineRecipe(store: RunStore, feId: string, itemId: string):
   return snap ?? recipeOf(store, feId);
 }
 
+/**
+ * Give a train on the track the recipe as it is now: re-snapshot from the
+ * live manifest. The current station index is kept, so the new recipe must
+ * still have a station there; the next station the line runs is the new
+ * recipe's. Refused mid-station (the running turn was prompted from the old
+ * one) and after arrival.
+ */
+export async function updateLineRecipe(store: RunStore, feId: string, itemId: string): Promise<LineState> {
+  const ls = await readLine(store, feId, itemId);
+  if (!ls) throw new Error(`no line "${feId}/${itemId}"`);
+  if (ls.state === "running") throw new Error(`${feId}/${itemId} is mid-station — wait for it to stop`);
+  if (ls.state === "done") throw new Error(`${feId}/${itemId} has already arrived`);
+  const live = recipeOf(store, feId);
+  if (ls.step >= live.steps.length) throw new Error(`recipe v${live.version} has ${live.steps.length} stations; ${feId}/${itemId} is at station ${ls.step + 1}`);
+  if (ls.style && !(ls.style in live.styles)) throw new Error(`recipe v${live.version} has no style "${ls.style}"`);
+  await writeJson(path.join(store.itemDir(feId, itemId), "recipe.json"), live);
+  ls.version = live.version;
+  await writeLine(store, feId, itemId, ls);
+  return ls;
+}
+
 export interface Station {
   index: number;
   total: number;

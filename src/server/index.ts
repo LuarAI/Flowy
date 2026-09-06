@@ -399,6 +399,15 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
           .finally(schedulePush);
         return { ok: true };
       }
+      case "/api/line-update": {
+        const s = await store();
+        const fe = q("foreach")!;
+        const item = q("item")!;
+        const ls = await api.lineUpdate(s, fe, item);
+        log(`${fe}/${item}: now on recipe v${ls.version}`);
+        schedulePush();
+        return ls;
+      }
       case "/api/timetable-add": {
         const ensured = await api.ensureStore(dir, q("run") ?? undefined, opts.engines);
         let s = ensured.store;

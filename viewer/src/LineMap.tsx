@@ -369,6 +369,16 @@ function LinePane({ state, block, lv, onClose, onError, act }: { state: State; b
         </div>
       </div>
       {gateRow}
+      {!done && !lv.live && ls.state !== "running" && block.liveVersion > ls.version && (
+        <div className="gate-row muted">
+          <span className="small">
+            on recipe v{ls.version}; the file is now v{block.liveVersion}
+          </span>
+          <button className="ghost small" onClick={() => call("/api/line-update")} title="its remaining stations come from the new version; nothing already done changes">
+            update this line
+          </button>
+        </div>
+      )}
       <ChatView
         dir={state.dir}
         runId={runId}

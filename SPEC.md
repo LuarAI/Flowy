@@ -326,8 +326,13 @@ Semantics that hold for every recipe:
   other station it is a normal turn and the train stays put until the human
   advances it.
 - **Versions.** `version` is set by Flowy. A line snapshots the recipe it
-  departed with (`recipe.json` in its item folder) and finishes on it;
-  editing the file changes the next departures, never a train on the track.
+  departed with (`recipe.json` in its item folder); editing the file changes
+  the next departures, never a train on the track by itself. A waiting line
+  can be *updated* (`flowy next … --update`, the pane's "update this line")
+  to the recipe as the file has it now: the snapshot is replaced, the
+  station index is kept, and the stations still ahead are the new
+  version's. Refused mid-station, after arrival, and when the new recipe
+  has no station at the line's index or no longer has the line's style.
 - **Learning.** `flowy distill <name> --from <chat>…` (or the depot in the
   viewer) hands finished conversations — the same kind of work done by hand,
   each time with the human steering — to the engine and asks for the recipe
@@ -541,7 +546,9 @@ and station 1; then each station in turn until a gate needs the human.
 missing, or a stopped/interrupted/failed station — `note` says which),
 `done`, `failed`. `flowy next <id>/<item> [--text …]` moves a waiting line
 to its next station, carrying the human's words as "The human says: …";
-`--resume` reruns the current station from its prompt. On the viewer's
+`--resume` reruns the current station from its prompt; `--update` first
+replaces the line's recipe snapshot with the file's current version (alone,
+it only does that). On the viewer's
 chat endpoint, a message to a line waiting at a `you` station is that
 station's answer (the line advances with it); at any other station it is a
 normal turn. Stopping a station's turn keeps the work and leaves the line
@@ -846,7 +853,7 @@ flowy recipe <node> [--item ...]          distill the conversation into the reci
 flowy done <node> [--item ...]            mark a wait/chat node complete
 flowy lines [dir]                         where every line is (§5.1)
 flowy depart <lines-id> <entry>... [--style s]   start lines from the timetable
-flowy next <lines-id>/<item> [--text "..."] [--resume]   move a line on (or rerun its station)
+flowy next <lines-id>/<item> [--text "..."] [--resume] [--update]   move a line on (rerun its station; adopt the edited recipe)
 flowy distill <name> --from <node>...     learn recipes/<name>.md from conversations (§2.6)
 flowy skip <foreach>/<item-id> [--undo]
 flowy stop [dir]

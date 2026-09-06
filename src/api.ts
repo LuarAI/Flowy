@@ -521,6 +521,12 @@ export async function lineResume(store: RunStore, feId: string, itemId: string, 
   return driveLine(store, feId, itemId, lineDeps(store, opts));
 }
 
+/** Give a waiting line the recipe as the workflow files have it now (its next station comes from the new one). */
+export async function lineUpdate(store: RunStore, feId: string, itemId: string): Promise<LineState> {
+  const { updateLineRecipe } = await import("./core/lines.js");
+  return updateLineRecipe(store, feId, itemId);
+}
+
 /** Where every line is, for the map and the departures board. */
 export async function linesOverview(store: RunStore, opts: { live?: (addr: NodeAddr) => boolean; liveRecipes?: Record<string, RecipeSpec> } = {}): Promise<LinesView[]> {
   const { readLine, lineRecipe } = await import("./core/lines.js");

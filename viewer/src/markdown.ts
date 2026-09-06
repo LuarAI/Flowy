@@ -2,7 +2,7 @@
  * Tiny, safe markdown renderer for chat bubbles and previews.
  * Escapes everything first, then builds known-safe HTML — no raw input ever
  * reaches innerHTML. Covers: headings, bold/italic, inline + fenced code,
- * links, unordered/ordered lists, paragraphs.
+ * links, unordered/ordered lists, block quotes, pipe tables, paragraphs.
  */
 
 function esc(s: string): string {
@@ -16,6 +16,28 @@ function inline(s: string): string {
   t = t.replace(/(^|\W)\*([^*\s][^*]*)\*(?=\W|$)/g, "$1<em>$2</em>");
   t = t.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
   return t;
+}
+
+function isRow(s: string): boolean {
+  // a row is any line with a pipe that is not a list item; harmless alone, it only becomes a table when a separator row follows
+  return s.includes("|") && !/^\s*([-*]|\d+[.)])\s/.test(s) && !/^\s*>/.test(s);
+}
+
+/** Split a table row into trimmed cells, honoring escaped pipes inside code spans. */
+function cells(row: string): string[] {
+  const t = row.trim().replace(/^\|/, "").replace(/\|$/, "");
+  const out: string[] = [];
+  let cur = "";
+  let inCode = false;
+  for (const ch of t) {
+    if (ch === "`") inCode = !inCode;
+    if (ch === "|" && !inCode) {
+      out.push(cur.trim());
+      cur = "";
+    } else cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
 }
 
 export function renderMarkdown(src: string): string {
@@ -67,6 +89,29 @@ export function renderMarkdown(src: string): string {
       flush();
       out.push("<hr>");
       i++;
+      continue;
+    }
+    if (/^\s*>/.test(line)) {
+      flush();
+      const buf: string[] = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ""));
+      out.push(`<blockquote>${renderMarkdown(buf.join("\n"))}</blockquote>`);
+      continue;
+    }
+    // pipe table: a header row, a |---|---| separator, then rows
+    if (isRow(line) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(lines[i + 1])) {
+      flush();
+      const head = cells(line);
+      const aligns = cells(lines[i + 1]).map((c) => (c.startsWith(":") && c.endsWith(":") ? "center" : c.endsWith(":") ? "right" : ""));
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && isRow(lines[i])) rows.push(cells(lines[i++]));
+      const td = (c: string, j: number, tag: "th" | "td") => `<${tag}${aligns[j] ? ` style="text-align:${aligns[j]}"` : ""}>${inline(c)}</${tag}>`;
+      out.push(
+        `<div class="tbl"><table><thead><tr>${head.map((c, j) => td(c, j, "th")).join("")}</tr></thead><tbody>${rows
+          .map((r) => `<tr>${head.map((_h, j) => td(r[j] ?? "", j, "td")).join("")}</tr>`)
+          .join("")}</tbody></table></div>`,
+      );
       continue;
     }
     if (line.trim() === "") {

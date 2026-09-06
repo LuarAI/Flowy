@@ -226,6 +226,24 @@ describe("lines blocks", () => {
     expect(ov[0].liveVersion).toBe(4);
   });
 
+  it("a waiting line can be updated to the edited recipe; its next station is the new one", async () => {
+    const dir = await makeWorkflow(WF);
+    const { store } = await runWf(dir);
+    await api.depart(store, "short", [{ id: "lego" }], { engines });
+    await api.lineNext(store, "short", "lego", { engines }); // now at station 2 (Record, you)
+    await fs.writeFile(path.join(dir, "recipes", "shorts.md"), RECIPE.replace("version: 3", "version: 4").replace("## Titles\ngate: auto\n\nWrite five titles.\n", ""));
+    store.manifest = await compileWorkflow(dir);
+    const u = await api.lineUpdate(store, "short", "lego");
+    expect(u.version).toBe(4);
+    expect(u.step).toBe(1);
+    const ov = await api.linesOverview(store);
+    expect(ov[0].lines[0].steps.length).toBe(3);
+    // the remaining stations follow the new recipe: Build is now the last one
+    const s = await api.lineNext(store, "short", "lego", { engines }, "recorded");
+    expect(s.state).toBe("done");
+    await expect(api.lineUpdate(store, "short", "lego")).rejects.toThrow(/arrived/);
+  });
+
   it("refuses unknown entries, unknown styles, and departing twice", async () => {
     const dir = await makeWorkflow(WF);
     const { store } = await runWf(dir);

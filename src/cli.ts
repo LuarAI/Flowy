@@ -264,12 +264,18 @@ program
   .option("-r, --run <id>")
   .option("-t, --text <text>", "what you say to it (a you-station's answer, e.g. where the file is)")
   .option("--resume", "run the current station again (after a stop, a failure, or a restart)")
-  .action(async (target: string, o: { dir: string; run?: string; text?: string; resume?: boolean }) => {
+  .option("--update", "first give the line the recipe as the file has it now (its remaining stations come from the new version)")
+  .action(async (target: string, o: { dir: string; run?: string; text?: string; resume?: boolean; update?: boolean }) => {
     try {
       const store = await api.getStore(path.resolve(o.dir), o.run);
       const a = parseAddr("x", target);
       const ac = abortOnSigint();
       const lo = { engines, log: out, turnContext: () => ({ signal: ac.signal, done: () => {} }) };
+      if (o.update) {
+        const u = await api.lineUpdate(store, a.item!.foreach, a.item!.id);
+        out(`${target}: now on recipe v${u.version}`);
+        if (!o.resume && o.text === undefined) return;
+      }
       const ls = o.resume ? await api.lineResume(store, a.item!.foreach, a.item!.id, lo) : await api.lineNext(store, a.item!.foreach, a.item!.id, lo, o.text ?? null);
       out(`${target}: ${ls.state}${ls.state === "done" ? " — arrived" : ` at station ${ls.step + 1}`}${ls.note ? ` — ${ls.note}` : ""}`);
     } catch (e) {
