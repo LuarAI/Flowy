@@ -254,7 +254,7 @@ function StepPaper({ state, target, act, onClose }: Props & { target: Extract<Pa
               ).then(onClose)
             }
           >
-            <Check size={15} color="#fffdf9" /> approve
+            <Check size={15} /> approve
           </button>
         )}
         {(showApprove || v.status === "done" || wrong || v.status === "stale") && !state.running && (

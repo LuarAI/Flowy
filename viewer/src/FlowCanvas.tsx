@@ -308,7 +308,7 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
           source: `src-${i}`,
           target: t.id,
           style: { strokeDasharray: "6 6", opacity: 0.5 },
-          markerEnd: { type: MarkerType.ArrowClosed, width: 13, height: 13, color: "#8a857c" },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 13, height: 13, color: "#8A8274" },
         });
       }
     });
@@ -349,7 +349,7 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
               }),
           } as PillNode["data"] & { sketchKey: string },
         });
-        es.push({ id: `oe-${n.id}--${j}`, source: n.id, target: pid, style: { opacity: 0.55 }, markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: "#8a857c" } });
+        es.push({ id: `oe-${n.id}--${j}`, source: n.id, target: pid, style: { opacity: 0.55 }, markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: "#8A8274" } });
       });
     }
 
@@ -367,7 +367,7 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
         target: e.to,
         label: branch ? "⑂ remembers" : undefined,
         className: viewById.get(e.from)?.status === "running" ? "running" : "",
-        markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: "#2b2925" },
+        markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: "#26231F" },
       });
     }
     return { nodes: ns, edges: es };
@@ -534,7 +534,7 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
         maxZoom={1.5}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} color="#ddd9d0" />
+        <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} color="#E6DFD2" />
         <Controls showInteractive={false} />
       </ReactFlow>
       <div className="canvas-hint">arrows connect · Delete removes · drag anything · click a pill to peek</div>
@@ -550,7 +550,7 @@ function Canvas({ state, onOpen, onError, act }: { state: State; onOpen: (t: Ope
             </label>
             <div className="actions">
               <button className="primary" onClick={() => void createChat()} disabled={!name.trim()}>
-                <Play size={12} color="#fffdf9" /> create
+                <Play size={12} /> create
               </button>
               <button className="ghost" onClick={() => setNaming(false)}>
                 never mind

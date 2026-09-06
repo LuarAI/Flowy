@@ -101,7 +101,7 @@ export function LineMap({ state, onOpen, onError, act }: { state: State; onOpen:
           A line is one item following a recipe, station by station. Teach the recipe first: distill it from the conversations you already had (the same kind of work done by hand), then put items on the timetable and let them depart.
         </p>
         <button className="primary" onClick={() => setDepot("new")}>
-          <Pencil size={13} color="#fffdf9" /> learn a recipe from my chats
+          <Pencil size={13} /> learn a recipe from my chats
         </button>
         {depot && <DepotPaper state={state} block={null} onClose={() => setDepot(null)} onError={onError} act={act} />}
       </div>
@@ -341,7 +341,7 @@ function LinePane({ state, block, lv, onClose, onError, act }: { state: State; b
     gateRow = (
       <div className="gate-row">
         <button className="primary small" onClick={() => call("/api/line-next")}>
-          <Play size={11} color="#fffdf9" /> {next ? `next station: ${next.title}` : "arrive"}
+          <Play size={11} /> {next ? `next station: ${next.title}` : "arrive"}
         </button>
         <span className="muted small">or talk to it first</span>
       </div>
@@ -477,7 +477,7 @@ function DeparturesSheet({ state, block, onClose, onError, act }: { state: State
         </div>
         <div className="actions">
           <button className="primary" disabled={!chosen.length || busy} onClick={() => void start()}>
-            <Play size={12} color="#fffdf9" /> start {chosen.length || ""} line{chosen.length === 1 ? "" : "s"}
+            <Play size={12} /> start {chosen.length || ""} line{chosen.length === 1 ? "" : "s"}
           </button>
           <button className="ghost" onClick={onClose}>
             never mind
@@ -563,7 +563,7 @@ function DepotPaper({ state, block, onClose, onError, act }: { state: State; blo
           </>
         )}
 
-        <h3 className="hand" style={{ margin: "18px 0 2px", fontSize: 17, fontWeight: "normal" }}>
+        <h3 className="hand" style={{ margin: "18px 0 2px", fontSize: 15 }}>
           {recipe ? "learn a newer version from conversations" : "learn a recipe from conversations"}
         </h3>
         <div className="sub">pick the chats where this kind of work was done by hand; the spine they share becomes the stations, your corrections become the rules</div>
@@ -583,7 +583,7 @@ function DepotPaper({ state, block, onClose, onError, act }: { state: State; blo
         ))}
         <div className="actions">
           <button className="primary" disabled={!name.trim() || !picked.length || busy} onClick={() => void learn()}>
-            <Pencil size={12} color="#fffdf9" /> {busy ? "distilling… (a few minutes)" : recipe ? `learn v${recipe.version + 1}` : "learn the recipe"}
+            <Pencil size={12} /> {busy ? "distilling… (a few minutes)" : recipe ? `learn v${recipe.version + 1}` : "learn the recipe"}
           </button>
           <select className="model-select" value={model} onChange={(e) => setModel(e.target.value)} title="model for the distiller">
             <option value="">model: default</option>

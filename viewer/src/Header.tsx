@@ -107,7 +107,7 @@ export function Header({ state, view, onView, onRun, onStop, act }: Props) {
       </div>
       {state.undo > 0 && !running && (
         <button className="ghost" onClick={() => act(() => post("/api/graph/undo"))} title="undo the last canvas edit to the files">
-          <Redo size={13} color="#8a857c" /> undo edit
+          <Redo size={13} /> undo edit
         </button>
       )}
       <div className="grow" />
@@ -208,7 +208,7 @@ export function Header({ state, view, onView, onRun, onStop, act }: Props) {
             ))}
             <div className="actions">
               <button className="primary" onClick={start}>
-                <Play color="#fffdf9" /> start
+                <Play /> start
               </button>
               <button className="ghost" onClick={() => setShowNew(false)}>
                 never mind
