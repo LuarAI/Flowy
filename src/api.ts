@@ -7,6 +7,7 @@ import { compileWorkflow, topoOrder } from "./core/compile.js";
 import { executeNode, settleWaiting, addrLabel, type ExecEvent } from "./core/execute.js";
 import { ensureDir, exists, listFiles, readText, writeJson } from "./core/fsutil.js";
 import { ensureLayout } from "./core/layout.js";
+import { SIZE_RULE } from "./core/lines.js";
 import { createRun, loadRun, resolveInputs, type RunStore } from "./core/runstore.js";
 import { runWorkflow, runLockHolder, updateItemStates, type RunOptions, type RunSummary } from "./core/scheduler.js";
 import { missingOutputs, nodeView, readVersionText, runOverview, type NodeView, type RunOverview } from "./core/status.js";
@@ -219,8 +220,10 @@ export interface ChatTurn {
   text: string;
   session: string | null;
   costUsd: number | null;
-  /** The human stopped this turn; partial work is kept and the session resumes. */
+  /** The turn was stopped (by the human, or by Flowy's loop guard); partial work is kept and the session resumes. */
   stopped?: boolean;
+  /** Set when Flowy stopped it: why, in words for the human. */
+  note?: string;
 }
 
 /**
@@ -305,7 +308,7 @@ export async function sendChatMessage(
     ? ""
     : opts.preamble != null
       ? opts.preamble + warn
-      : `Working directory contract: your inputs are under ./in (read-only). Put a file in ./out only when a later step needs it; answer everything else in chat — never write a file just to hold a reply. Keep answers conversational and concise.\n\n${warn}${spec.body.trim() ? spec.body.trim() + "\n\n" : ""}`;
+      : `Working directory contract: your inputs are under ./in (read-only). Put a file in ./out only when a later step needs it; answer everything else in chat — never write a file just to hold a reply. Keep answers conversational and concise.\n\n${SIZE_RULE}\n\n${warn}${spec.body.trim() ? spec.body.trim() + "\n\n" : ""}`;
   const er = await engine.run({
     cwd: vdir,
     prompt: preamble + sent,
@@ -344,10 +347,12 @@ export async function sendChatMessage(
     await store.writeResult(vdir, result);
   }
   if (er.aborted) {
-    // The human hit stop: not an error. The partial work stays in the trace
-    // and the session (persisted above, from init) resumes on the next message.
-    append({ t: new Date().toISOString(), type: "end", engine: engine.name, payload: { stopped: true } });
-    return { text: er.text ?? "", session: result?.session_id ?? null, costUsd: er.costUsd, stopped: true };
+    // The human hit stop (or Flowy's guard did): not an error. The partial work
+    // stays in the trace and the session (persisted above, from init) resumes
+    // on the next message.
+    append({ t: new Date().toISOString(), type: "end", engine: engine.name, payload: er.guard ? { stopped: true, guard: er.guard } : { stopped: true } });
+    if (er.guard) opts.log?.(`chat ${addr.node}: stopped by Flowy — ${er.guard}`);
+    return { text: er.text ?? "", session: result?.session_id ?? null, costUsd: er.costUsd, stopped: true, ...(er.guard ? { note: er.guard } : {}) };
   }
   if (er.exitCode !== 0) {
     if (er.timedOut)
@@ -455,6 +460,19 @@ function lineDeps(store: RunStore, opts: LineOptions): import("./core/lines.js")
       } finally {
         tc?.done();
       }
+    },
+    // A station that belongs to the human needs no engine turn: the marker goes
+    // in the trace (the pane shows it), and the next station's prompt carries
+    // the text. Saves a whole context re-read per `you` station.
+    mark: async (addr, text, station) => {
+      const vdir = await store.currentDir(addr);
+      if (!vdir) return false;
+      const res = await store.readResult(vdir);
+      if (!res?.session_id) return false; // no conversation yet: let a real turn open it
+      const event: TraceEvent = { t: new Date().toISOString(), type: "user", engine: "flowy", payload: { text, station } };
+      await fs.appendFile(path.join(vdir, "trace.jsonl"), JSON.stringify(event) + "\n");
+      opts.emit?.({ addr, event });
+      return true;
     },
     finish: async (addr) => {
       const vdir = await store.currentDir(addr);

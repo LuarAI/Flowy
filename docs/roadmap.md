@@ -115,7 +115,13 @@ stays where you scrolled.
 - Semantic zoom (far = lines and glows only); animation of a train
   sliding one station.
 - Activity-based watchdog for long turns (kill on N quiet minutes, not
-  wall-clock).
+  wall-clock). The output-limit loop guard shipped 2026-09-08 (two
+  oversized replies in a row stop the turn); a quiet-minutes guard and a
+  cost ceiling per station are the next two.
+- Cost: a per-station cost column on the map and a "this line has spent $X"
+  line in the pane, from the traces' result events (the data is already
+  there; stopped turns report nothing and should be estimated from their
+  last usage event).
 
 ## Viewer backlog (agreed 2026-09, not yet built)
 

@@ -4,6 +4,12 @@ import { readItem } from "./materialize.js";
 import type { RunStore } from "./runstore.js";
 import type { LineState, NodeAddr, RecipeSpec, RecipeStep } from "./types.js";
 
+/** Same words as the chat preamble (api.ts): the one rule that keeps an agent from looping on its own output limit. */
+export const SIZE_RULE =
+  "Size rule: keep every reply and every single file write under about 250 lines. Write a big file in parts (Write the first part, append the rest with Edit). Never print a whole transcript or dataset into the conversation — filter it with a small script and read only the slice you need. A reply that exceeds the model's output limit is thrown away and still paid for.";
+
+const GUARD_PREFIX = "stopped by Flowy — ";
+
 /**
  * Lines (SPEC §5.1): one item of a lines block, following its recipe's
  * stations in a single conversation. The agent sees exactly one station at
@@ -91,6 +97,7 @@ export function departurePreamble(recipe: RecipeSpec, entry: Record<string, unkn
   parts.push(
     `Working directory contract: your inputs are under ./in (read-only). Put a file in ./out only when a later station or step needs it (a script, a draft, a deliverable); answer everything else in chat — never write a file just to hold a reply. Keep answers conversational and concise.`,
   );
+  parts.push(SIZE_RULE);
   const title = typeof entry.title === "string" ? entry.title : String(entry.id ?? "");
   const brief = typeof entry.brief === "string" ? entry.brief : "";
   const extra = Object.entries(entry)
@@ -103,11 +110,13 @@ export function departurePreamble(recipe: RecipeSpec, entry: Record<string, unkn
 }
 
 /** The message that opens one station. */
-export function stationPrompt(recipe: RecipeSpec, index: number, humanInput: string | null): string {
+export function stationPrompt(recipe: RecipeSpec, index: number, humanInput: string | null, extra: { flowyNote?: string | null; carried?: RecipeStep | null } = {}): string {
   const s = recipe.steps[index];
   const lines: string[] = [];
   lines.push(`## Station ${index + 1} of ${recipe.steps.length} — ${s.title}`);
+  if (extra.carried) lines.push(`\n(Station ${index} — ${extra.carried.title} — was the human's own; it read:\n${extra.carried.body.trim()})`);
   if (humanInput?.trim()) lines.push(`\nThe human says:\n${humanInput.trim()}`);
+  if (extra.flowyNote) lines.push(`\nNote from Flowy: the previous attempt at this station was ${extra.flowyNote}. This time work in smaller pieces: split any big file into parts, never print a whole transcript or dataset, and keep each reply short.`);
   lines.push("");
   lines.push(s.body);
   lines.push("");
@@ -136,11 +145,15 @@ export async function missingExpects(store: RunStore, addr: NodeAddr, step: Reci
 
 export interface TurnResult {
   stopped?: boolean;
+  /** Why Flowy stopped it (absent when the human did). */
+  note?: string;
 }
 
 export interface DriveDeps {
   /** One engine turn in the line's conversation. `preamble` is non-null only for the very first turn. */
   turn: (addr: NodeAddr, text: string, station: Station, preamble: string | null, model: string | null) => Promise<TurnResult>;
+  /** Record a station marker without an engine turn (for the human's own stations). False when there is no conversation yet. */
+  mark?: (addr: NodeAddr, text: string, station: Station) => Promise<boolean>;
   /** Called when the line reaches its last station: mark the conversation done. */
   finish: (addr: NodeAddr) => Promise<void>;
   log?: (m: string) => void;
@@ -163,6 +176,10 @@ export async function driveLine(store: RunStore, feId: string, itemId: string, d
     deps.onChange?.(feId, itemId, ls);
   };
 
+  // A station the human's own answer moves past: its text rides along into the next prompt.
+  let carried: RecipeStep | null = null;
+  const prev = recipe.steps[ls.step - 1];
+  if (prev?.gate === "you" && !ls.history.some((h) => h.step === ls.step)) carried = prev;
   for (;;) {
     const step = recipe.steps[ls.step];
     if (!step) {
@@ -174,6 +191,7 @@ export async function driveLine(store: RunStore, feId: string, itemId: string, d
       deps.log?.(`✓ ${label}: arrived (${recipe.steps.length} stations)`);
       return ls;
     }
+    const flowyNote = ls.note?.startsWith(GUARD_PREFIX) ? ls.note.slice(GUARD_PREFIX.length) : null;
     ls.state = "running";
     ls.note = null;
     ls.waitingSince = null;
@@ -186,9 +204,21 @@ export async function driveLine(store: RunStore, feId: string, itemId: string, d
     const first = !res?.session_id;
     const station = stationOf(recipe, ls.step);
     deps.log?.(`▶ ${label}: station ${ls.step + 1}/${recipe.steps.length} — ${step.title}`);
+    const prompt = stationPrompt(recipe, ls.step, humanInput, { flowyNote, carried });
+    carried = null;
+    // The human's own station: no engine turn, just the marker. The agent reads it with the next station.
+    if (step.gate === "you" && !first && deps.mark && (await deps.mark(addr, prompt, station))) {
+      ls.history[ls.history.length - 1].ended = nowIso();
+      humanInput = null;
+      ls.state = "waiting";
+      ls.note = null;
+      ls.waitingSince = nowIso();
+      await save();
+      return ls;
+    }
     let r: TurnResult;
     try {
-      r = await deps.turn(addr, stationPrompt(recipe, ls.step, humanInput), station, first ? departurePreamble(recipe, entry, ls.style) : null, step.model);
+      r = await deps.turn(addr, prompt, station, first ? departurePreamble(recipe, entry, ls.style) : null, step.model);
     } catch (e) {
       ls.history[ls.history.length - 1].ended = nowIso();
       ls.state = "failed";
@@ -202,7 +232,7 @@ export async function driveLine(store: RunStore, feId: string, itemId: string, d
     humanInput = null;
     if (r.stopped) {
       ls.state = "waiting";
-      ls.note = "stopped by you — talk to it, resume the station, or move on";
+      ls.note = r.note ? `${GUARD_PREFIX}${r.note}` : "stopped by you — talk to it, resume the station, or move on";
       ls.waitingSince = nowIso();
       await save();
       return ls;

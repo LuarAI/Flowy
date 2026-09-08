@@ -60,7 +60,8 @@ export function renderMarkdown(src: string): string {
       i++;
       while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
       i++; // closing fence
-      out.push(`<pre><code>${esc(buf.join("\n"))}</code></pre>`);
+      // a copy button on every fenced block: prompts, scripts, descriptions get pasted elsewhere
+      out.push(`<div class="codeblock"><button type="button" class="copy" data-copy title="copy this block">copy</button><pre><code>${esc(buf.join("\n"))}</code></pre></div>`);
       continue;
     }
     const h = /^(#{1,4})\s+(.*)$/.exec(line);

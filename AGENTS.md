@@ -182,6 +182,10 @@ departures sheet. Rules:
   is how a waiting line adopts a recipe you just edited (its remaining
   stations follow the new version; keep station count and order compatible
   or re-depart).
+- A station that produces a big artifact (a long script, a cut list, a
+  dataset) must say to write it in parts: a data file first, chapter by
+  chapter, then a short script that reads it. Flowy's size rule is in every
+  preamble, but the station is where the agent decides how to write.
 - Say things in chat unless a later station needs them as a file. A hook
   list, a ranking, five titles: chat. A script the human records from, a
   beat sheet the build reads, a build script: `out/`. Stations that need a

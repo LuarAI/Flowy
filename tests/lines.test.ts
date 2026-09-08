@@ -244,6 +244,37 @@ describe("lines blocks", () => {
     await expect(api.lineUpdate(store, "short", "lego")).rejects.toThrow(/arrived/);
   });
 
+  it("a station the loop guard stopped waits with Flowy's note, and the retry prompt carries it", async () => {
+    const recipe = RECIPE.replace("Build it.\nMOCK_WRITE draft.md <<< built", "Build it.\nMOCK_GUARD two replies in a row exceeded the model's output limit");
+    const dir = await makeWorkflow({ ...WF, "recipes/shorts.md": recipe });
+    const { store } = await runWf(dir);
+    await api.depart(store, "short", [{ id: "lego" }], { engines });
+    await api.lineNext(store, "short", "lego", { engines }); // the human's station: no engine turn, just the marker
+    const vdir = (await store.currentDir({ node: "short-line", item: { foreach: "short", id: "lego" } }))!;
+    const users = () => fs.readFile(path.join(vdir, "trace.jsonl"), "utf8").then((t) => t.trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.type === "user"));
+    let u = await users();
+    expect(u[u.length - 1].engine).toBe("flowy");
+    expect(u[u.length - 1].payload.station).toMatchObject({ index: 1, gate: "you" });
+    const s = await api.lineNext(store, "short", "lego", { engines }, "recorded");
+    expect(s.state).toBe("waiting");
+    expect(s.step).toBe(2);
+    expect(s.note).toMatch(/^stopped by Flowy — two replies/);
+    u = await users();
+    // the build prompt carried the human's station text and their words
+    const build = u.find((x) => x.payload.station?.index === 2)!;
+    expect(build.payload.text).toContain("was the human's own");
+    expect(build.payload.text).toContain("The human says:\nrecorded");
+    // resuming under a fixed recipe: the prompt tells the agent why it was stopped
+    await fs.writeFile(path.join(dir, "recipes", "shorts.md"), RECIPE);
+    store.manifest = await compileWorkflow(dir);
+    await api.lineUpdate(store, "short", "lego");
+    const r = await api.lineResume(store, "short", "lego", { engines });
+    expect(r.state).toBe("done");
+    u = await users();
+    const retry = u.filter((x) => x.payload.station?.index === 2).pop()!;
+    expect(retry.payload.text).toContain("Note from Flowy: the previous attempt at this station was two replies in a row");
+  });
+
   it("refuses unknown entries, unknown styles, and departing twice", async () => {
     const dir = await makeWorkflow(WF);
     const { store } = await runWf(dir);

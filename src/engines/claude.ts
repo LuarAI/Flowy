@@ -163,12 +163,30 @@ export class ClaudeEngine implements Engine {
     emit("start", { cmd, args: args.filter((a) => a !== JSON.stringify(job.schema)) });
 
     let lastError: string | null = null;
+    // Loop guard: a reply that blows the model's output limit is discarded (and
+    // paid for), and an agent that just hit it usually tries the same thing
+    // again. Two in a row with no tool call between them: stop the turn and
+    // tell the human why, instead of burning a third.
+    const ac = new AbortController();
+    if (job.signal.aborted) ac.abort();
+    else job.signal.addEventListener("abort", () => ac.abort(), { once: true });
+    let overflowStreak = 0;
+    let guard: string | null = null;
+    const watchText = (text: string) => {
+      if (!/exceeded the \d+ output token maximum/i.test(text)) return;
+      overflowStreak++;
+      if (overflowStreak >= 2 && !guard) {
+        guard = "two replies in a row exceeded the model's output limit (a file or an answer too big for one go) — stopped before a third; tell it to write in smaller pieces (split big files, append with Edit) and resume the station";
+        emit("text", { type: "text", text: `Flowy: ${guard}` });
+        ac.abort();
+      }
+    };
     const outcome = await spawnProcess(cmd, args, {
       cwd: job.cwd,
       env,
       stdin: job.prompt,
       timeoutMs: job.timeoutMs,
-      signal: job.signal,
+      signal: ac.signal,
       shell,
       onStderrLine: (l) => emit("stderr", l),
       onStdoutLine: (line) => {
@@ -196,6 +214,8 @@ export class ClaudeEngine implements Engine {
             const kind: TraceEvent["type"] =
               bt === "thinking" ? "thinking" : bt === "tool_use" ? "tool_use" : bt === "tool_result" ? "tool_result" : "text";
             emit(sub && kind === "text" ? "subagent" : kind, { ...b, parent_tool_use_id: ev.parent_tool_use_id ?? null });
+            if (kind === "tool_use") overflowStreak = 0; // it made progress
+            else if (kind === "text" && !sub && typeof b.text === "string") watchText(b.text);
           }
           if (!blocks.length) emit("text", ev);
         } else if (type === "result") {
@@ -224,6 +244,7 @@ export class ClaudeEngine implements Engine {
     res.exitCode = outcome.code;
     res.timedOut = outcome.timedOut;
     res.aborted = outcome.aborted;
+    res.guard = guard;
     // A killed process emits no result event; leave an end marker in the trace.
     if (outcome.timedOut) emit("end", { timed_out: true, after_ms: job.timeoutMs });
     if (outcome.code !== 0 && !res.error) res.error = lastError ?? outcome.stderrTail ?? `exit ${outcome.code}`;

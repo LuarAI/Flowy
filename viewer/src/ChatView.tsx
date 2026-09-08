@@ -37,7 +37,8 @@ export function traceToMessages(trace: TraceEvent[]): ChatMsg[] {
       }
       out.push({ role: "tool", text: `${String((p as Record<string, unknown>).name)}${detail ? ` · ${detail}` : ""}` });
     } else if (e.type === "end" && p && typeof p === "object" && (p as Record<string, unknown>).stopped === true) {
-      out.push({ role: "tool", text: "■ stopped — this conversation continues where it left off" });
+      const guard = (p as Record<string, unknown>).guard;
+      out.push({ role: "tool", text: typeof guard === "string" ? `■ stopped by Flowy — ${guard}` : "■ stopped — this conversation continues where it left off" });
     } else if (e.type === "end" && p && typeof p === "object" && (p as Record<string, unknown>).timed_out === true) {
       out.push({ role: "tool", text: "⏱ hit this chat's turn time limit — send a message to continue" });
     }
@@ -239,11 +240,32 @@ export function ChatView(p: ChatViewProps) {
   const stopTurn = () =>
     void post("/api/chat-stop", { run: runId, node: addr.node, item: addr.item ? `${addr.item.foreach}/${addr.item.id}` : undefined }).catch(() => {});
 
+  // copy buttons: one per fenced block (rendered by the markdown), one per assistant bubble
+  const copyText = async (text: string, btn: HTMLElement | null) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (btn) {
+        const was = btn.textContent;
+        btn.textContent = "copied";
+        setTimeout(() => (btn.textContent = was), 1200);
+      }
+    } catch {
+      p.onError("could not copy — the browser refused clipboard access");
+    }
+  };
+  const onBubblesClick = (e: React.MouseEvent) => {
+    const btn = (e.target as HTMLElement).closest?.("button[data-copy]") as HTMLElement | null;
+    if (!btn) return;
+    e.stopPropagation();
+    const pre = btn.parentElement?.querySelector("pre");
+    if (pre) void copyText(pre.textContent ?? "", btn);
+  };
+
   const flowCls = p.inFlow ? " nowheel nodrag" : "";
   return (
     <div className="chatview" style={p.style}>
       <div className="bubbles-wrap">
-        <div ref={scroller} onScroll={onScroll} className={`bubbles${flowCls}`}>
+        <div ref={scroller} onScroll={onScroll} onClick={onBubblesClick} className={`bubbles${flowCls}`}>
           {msgs === null && <div className="muted small">…</div>}
           {msgs !== null && msgs.length === 0 && <div className="muted small">{p.emptyHint ?? "say something to start"}</div>}
           {(msgs ?? []).map((m, i) =>
@@ -256,7 +278,12 @@ export function ChatView(p: ChatViewProps) {
                 <span>● {m.text}</span>
               </div>
             ) : m.role === "assistant" ? (
-              <div key={i} className="bubble assistant md" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
+              <div key={i} className="bubble assistant md">
+                <div dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }} />
+                <button type="button" className="copy bubble-copy" title="copy this whole reply as text" onClick={(e) => void copyText(m.text, e.currentTarget)}>
+                  copy
+                </button>
+              </div>
             ) : (
               <div key={i} className={`bubble ${m.role}`}>
                 {m.text}

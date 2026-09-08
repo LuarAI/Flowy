@@ -273,6 +273,18 @@ export async function startServer(dir: string, opts: ServeOptions): Promise<http
         if (!running) return { stopped: false };
         running.ac.abort();
         return { stopped: true };
+      case "/api/stop-all": {
+        // The panic button: every conversation turn in flight, and the run if one is going.
+        let turns = 0;
+        for (const [, ac] of activeTurns) {
+          ac.abort();
+          turns++;
+        }
+        const run = !!running;
+        if (running) running.ac.abort();
+        log(`■ stop everything: ${turns} turn${turns === 1 ? "" : "s"}${run ? " and the run" : ""} stopped`);
+        return { turns, run };
+      }
       case "/api/approve": {
         const s = await store();
         await api.approve(s, addr(), (body.fields as Record<string, unknown>) ?? {}, "viewer");

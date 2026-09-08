@@ -555,6 +555,21 @@ normal turn. Stopping a station's turn keeps the work and leaves the line
 `waiting` with a note. When the runner restarts, lines left `running` by a
 dead process become `waiting` with an "interrupted" note.
 
+A `you` station costs no engine turn once the conversation exists: Flowy
+writes the station marker to the trace itself (the pane shows it) and the
+next station's prompt carries that station's text along with the human's
+words. Only a `you` station that opens a line runs a real turn.
+
+**Loop guard.** Every conversation is opened with a standing size rule (keep
+replies and single file writes small, write big files in parts, never print
+a whole transcript). If an engine still returns two replies in a row that
+exceeded the model's output limit with no tool call between them, Flowy
+stops the turn before a third (`end` event `{stopped, guard}`), the line
+waits with a note beginning "stopped by Flowy —", and the next prompt at
+that station says why and asks for smaller pieces. `POST /api/stop-all`
+(the viewer's "stop everything" button) aborts every turn in flight and the
+run, keeping all work.
+
 When the last station ends, the line's conversation is marked `done` (its
 `out/` becomes the item's outputs) and the item is `done`. Parking a line
 is `flowy skip <id>/<item>`, as for any item.

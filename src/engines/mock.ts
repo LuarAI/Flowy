@@ -12,6 +12,7 @@ import { emptyResult, type Engine, type EngineJob, type EngineResult } from "./t
  *   MOCK_SLEEP <ms>                  wait (to exercise concurrency/locks)
  *   MOCK_NO_DEFAULTS                 do not write undeclared default outputs
  *   MOCK_LIST_IN                     write out/_in.txt with a listing of in/
+ *   MOCK_GUARD [why]                 stop as Flowy's loop guard would (aborted, guard set)
  *
  * Every declared output that was not written explicitly is written with the
  * prompt as its content, so any node "succeeds" by default.
@@ -52,6 +53,14 @@ export class MockEngine implements Engine {
         const files = await listFiles(path.join(job.cwd, "in"));
         await writeText(path.join(job.cwd, "out", "_in.txt"), files.join("\n") + "\n");
         written.add("_in.txt");
+      } else if ((m = /^MOCK_GUARD\s*(.*)$/.exec(line))) {
+        res.guard = m[1] || "two replies in a row exceeded the model's output limit";
+        res.aborted = true;
+        res.exitCode = 130;
+        res.sessionId = job.resumeSession ?? `mock-session-${++this.counter}`;
+        emit("text", { type: "text", text: `Flowy: ${res.guard}` });
+        emit("end", { aborted: true });
+        return res;
       }
       if (job.signal.aborted) {
         res.aborted = true;

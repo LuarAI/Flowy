@@ -39,6 +39,8 @@ export interface EngineResult {
   error: string | null;
   timedOut: boolean;
   aborted: boolean;
+  /** Flowy stopped the run itself (a loop it could see coming); says why, in words for the human. */
+  guard: string | null;
 }
 
 export interface InteractiveJob {
@@ -75,5 +77,6 @@ export function emptyResult(): EngineResult {
     error: null,
     timedOut: false,
     aborted: false,
+    guard: null,
   };
 }

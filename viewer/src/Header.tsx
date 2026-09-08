@@ -24,6 +24,7 @@ export function Header({ state, view, onView, onRun, onStop, act }: Props) {
   const ov = state.overview;
   const running = !!state.running;
   const linesWaiting = (state.lines ?? []).reduce((n, b) => n + b.lines.filter((l) => !l.parked && (l.line.state === "waiting" || l.line.state === "failed")).length, 0);
+  const linesLive = (state.lines ?? []).reduce((n, b) => n + b.lines.filter((l) => l.live).length, 0);
   const needs = (ov?.pending.length ?? 0) + linesWaiting;
   const inputDecls = Object.entries(m?.inputs ?? {});
   const empty = (m?.top.length ?? 0) === 0;
@@ -115,6 +116,11 @@ export function Header({ state, view, onView, onRun, onStop, act }: Props) {
         <span className="needs-you">
           {needs} thing{needs === 1 ? "" : "s"} need{needs === 1 ? "s" : ""} you
         </span>
+      )}
+      {linesLive > 0 && (
+        <button className="panic" onClick={() => act(() => post("/api/stop-all"))} title={`${linesLive} conversation${linesLive === 1 ? "" : "s"} working${running ? " and the run" : ""} — stop all of them now; nothing is lost, each picks up where it left off`}>
+          <Stop /> stop everything ({linesLive}{running ? " + run" : ""})
+        </button>
       )}
       {running ? (
         <button onClick={onStop}>
