@@ -411,6 +411,41 @@ program
     }
   });
 
+program
+  .command("hub")
+  .description("one address for every workflow: a sidebar switches between them (§9)")
+  .option("-p, --port <n>", "port", "3579")
+  .option("--add <dir...>", "register workflow folders and exit")
+  .option("--list", "show what is registered and exit")
+  .action(async (o: { port: string; add?: string[]; list?: boolean }) => {
+    try {
+      const { startHub, readRegistry, writeRegistry, slugify } = await import("./server/hub.js");
+      if (o.add?.length) {
+        const list = await readRegistry();
+        for (const d of o.add) {
+          const abs = path.resolve(d);
+          const { promises: fsp } = await import("node:fs");
+          await fsp.access(path.join(abs, "workflow.yaml"));
+          const text = await fsp.readFile(path.join(abs, "workflow.yaml"), "utf8");
+          const name = (/^name:\s*(.+)$/m.exec(text)?.[1] ?? path.basename(abs)).trim().replace(/^["']|["']$/g, "");
+          const i = list.findIndex((w) => path.resolve(w.dir) === abs);
+          if (i >= 0) list[i] = { name, dir: abs };
+          else list.push({ name, dir: abs });
+          out(`registered "${name}" -> /w/${slugify(name)}/`);
+        }
+        await writeRegistry(list);
+        return;
+      }
+      if (o.list) {
+        for (const w of await readRegistry()) out(`${slugify(w.name).padEnd(24)} ${w.dir}`);
+        return;
+      }
+      await startHub({ port: parseInt(o.port, 10), engines, log: out });
+    } catch (e) {
+      fail(e);
+    }
+  });
+
 function summarize(p: unknown): string {
   if (typeof p === "string") return p.slice(0, 160);
   if (p && typeof p === "object") {

@@ -3,6 +3,7 @@ import { FlowCanvas, type OpenTarget } from "./FlowCanvas";
 import { Header, type View } from "./Header";
 import { LineMap } from "./LineMap";
 import { Paper, type PaperTarget } from "./Paper";
+import { Sidebar } from "./Sidebar";
 import { get, post, type State } from "./client";
 
 export function App() {
@@ -96,21 +97,28 @@ export function App() {
     else if (t.kind === "checklist" && t.foreach) setPaper({ kind: "checklist", foreach: t.foreach });
   };
 
+  const needs =
+    (state.overview?.pending.length ?? 0) +
+    (state.lines ?? []).reduce((n, b) => n + b.lines.filter((l) => !l.parked && (l.line.state === "waiting" || l.line.state === "failed")).length, 0);
+
   return (
-    <div className="app">
-      <Header state={state} view={effective} onView={setView} onRun={(opts) => act(() => post("/api/run", opts))} onStop={() => act(() => post("/api/stop"))} act={act} />
-      {error && (
-        <div className="err-note" onClick={() => setError(null)}>
-          {error}
-        </div>
-      )}
-      {state.compileError && (
-        <div className="err-note" style={{ top: 60 }}>
-          {state.compileError}
-        </div>
-      )}
-      <div className="canvas-wrap">{effective === "map" ? <LineMap state={state} onOpen={open} onError={setError} act={act} /> : <FlowCanvas state={state} onOpen={open} onError={setError} act={act} />}</div>
-      {paper && <Paper state={state} target={paper} onOpen={setPaper} onClose={() => setPaper(null)} act={act} />}
+    <div className="app with-side">
+      <Sidebar needs={needs} />
+      <div className="app-main">
+        <Header state={state} view={effective} onView={setView} onRun={(opts) => act(() => post("/api/run", opts))} onStop={() => act(() => post("/api/stop"))} act={act} />
+        {error && (
+          <div className="err-note" onClick={() => setError(null)}>
+            {error}
+          </div>
+        )}
+        {state.compileError && (
+          <div className="err-note" style={{ top: 60 }}>
+            {state.compileError}
+          </div>
+        )}
+        <div className="canvas-wrap">{effective === "map" ? <LineMap state={state} onOpen={open} onError={setError} act={act} /> : <FlowCanvas state={state} onOpen={open} onError={setError} act={act} />}</div>
+        {paper && <Paper state={state} target={paper} onOpen={setPaper} onClose={() => setPaper(null)} act={act} />}
+      </div>
     </div>
   );
 }
