@@ -4,7 +4,7 @@ import { Header, type View } from "./Header";
 import { LineMap } from "./LineMap";
 import { Paper, type PaperTarget } from "./Paper";
 import { Sidebar } from "./Sidebar";
-import { get, post, type State } from "./client";
+import { basePath, get, post, type State } from "./client";
 
 export function App() {
   const [state, setState] = useState<State | null>(null);
@@ -27,7 +27,7 @@ export function App() {
     let ws: WebSocket;
     let closed = false;
     const connect = () => {
-      ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws = new WebSocket(`${proto}://${location.host}${basePath()}/ws`);
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "state") setState(msg.state);

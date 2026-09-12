@@ -186,8 +186,23 @@ export interface NodeDetail {
   stderr: string | null;
 }
 
+/**
+ * Where this viewer is mounted. The hub serves every workflow from one port under
+ * /w/<slug>/, so an absolute "/api/state" would hit the hub instead of the
+ * workflow. Served directly (flowy serve), this is "" and nothing changes.
+ */
+export function basePath(): string {
+  const m = /^\/w\/[^/]+/.exec(location.pathname);
+  return m ? m[0] : "";
+}
+
+/** Absolute-looking API paths, rebased onto the mount point. */
+function api(path: string): string {
+  return path.startsWith("/") ? basePath() + path : path;
+}
+
 export async function get<T>(path: string, params: Record<string, string | undefined> = {}): Promise<T> {
-  const u = new URL(path, location.origin);
+  const u = new URL(api(path), location.origin);
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) u.searchParams.set(k, v);
   const r = await fetch(u);
   const j = await r.json();
@@ -196,7 +211,7 @@ export async function get<T>(path: string, params: Record<string, string | undef
 }
 
 export async function post<T = unknown>(path: string, body: Record<string, unknown> = {}): Promise<T> {
-  const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch(api(path), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error ?? r.statusText);
   return j as T;
